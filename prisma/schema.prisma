@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,327 +7,273 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Organization created by Admin
-model Organization {
-  id          String   @id @default(cuid())
-  name        String
-  address     String
-  gst         String?
-  adminId     String   @unique
-  admin       Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  employees   Employee[]
-  shifts      Shift[]
-  incentives  IncentiveCategory[]
-  announcements Announcement[]
-  holidays    Holiday[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// Admin user
 model Admin {
-  id                String   @id @default(cuid())
-  userId            String   @unique
-  password          String
-  securityPassword  String   // For password reset verification
-  name              String
-  phone             String   @unique
-  email             String?
-  address           String?
-  profilePhoto      String?
-  organization      Organization?
-  employees         Employee[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String        @id
+  userId           String        @unique
+  password         String
+  securityPassword String
+  name             String
+  phone            String        @unique
+  email            String?
+  address          String?
+  profilePhoto     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime
+  Employee         Employee[]
+  Organization     Organization?
 }
 
-// Employee user
+model Announcement {
+  id             String       @id
+  title          String
+  message        String
+  organizationId String
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime
+  Organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+  id            String   @id
+  employeeId    String
+  date          String
+  punchIn       String?
+  punchOut      String?
+  punchInLat    Float?
+  punchInLng    Float?
+  punchOutLat   Float?
+  punchOutLng   Float?
+  punchInPhoto  String?
+  punchOutPhoto String?
+  workHours     Float    @default(0)
+  overtime      Float    @default(0)
+  status        String   @default("present")
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+  Employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+}
+
 model Employee {
-  id                String   @id @default(cuid())
-  userId            String   @unique
+  id                String              @id
+  userId            String              @unique
   password          String
-  securityPassword  String   // For password reset verification
+  securityPassword  String
   name              String
-  phone             String   @unique
+  phone             String              @unique
   email             String?
   address           String?
   designation       String?
   department        String?
-  salary            Float    @default(0)
-  overtimeRate      Float    @default(0)
-
-  // Bank Details
-  aadharNumber      String?  // 12 digit Aadhar number
-  panNumber         String?  // PAN card number
-  accountNumber     String?  // Bank account number
-  ifscCode          String?  // Bank IFSC code
-  upiId             String?  // UPI ID for payments
-
+  salary            Float               @default(0)
+  overtimeRate      Float               @default(0)
+  aadharNumber      String?
+  panNumber         String?
+  accountNumber     String?
+  ifscCode          String?
+  upiId             String?
   organizationId    String
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   adminId           String
-  admin             Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  attendance        Attendance[]
-  leaves            Leave[]
-  salaryRecords     SalaryRecord[]
-  incentives        EmployeeIncentive[]
-  shifts            EmployeeShift[]
-  expenses          Expense[]
-  payrollAdjustments PayrollAdjustment[]
-  biometricEnabled  Boolean @default(false)
+  biometricEnabled  Boolean             @default(false)
   profilePhoto      String?
-  active            Boolean  @default(true)
-  starOfMonth       Boolean  @default(false)
-
-  // Geofence settings for location-based attendance
-  geofenceEnabled   Boolean  @default(false)
-  geofenceLat       Float?   // Geofence center latitude
-  geofenceLng       Float?   // Geofence center longitude
-  geofenceRadius    Float?   @default(100) // Radius in meters
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  active            Boolean             @default(true)
+  starOfMonth       Boolean             @default(false)
+  geofenceEnabled   Boolean             @default(false)
+  geofenceLat       Float?
+  geofenceLng       Float?
+  geofenceRadius    Float?              @default(100)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  Attendance        Attendance[]
+  Admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  Organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  EmployeeIncentive EmployeeIncentive[]
+  EmployeeShift     EmployeeShift[]
+  Expense           Expense[]
+  Leave             Leave[]
+  PayrollAdjustment PayrollAdjustment[]
+  SalaryRecord      SalaryRecord[]
 }
 
-// Shift management
-model Shift {
-  id              String   @id @default(cuid())
-  name            String
-  startTime       String   // HH:mm format
-  endTime         String   // HH:mm format
-  graceMinutes    Int      @default(15)
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employees       EmployeeShift[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+model EmployeeIncentive {
+  id                String             @id
+  employeeId        String
+  categoryId        String?
+  month             String
+  amount            Float
+  reason            String
+  type              String             @default("bonus")
+  notes             String?
+  createdAt         DateTime           @default(now())
+  IncentiveCategory IncentiveCategory? @relation(fields: [categoryId], references: [id])
+  Employee          Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([month])
+  @@index([employeeId])
 }
 
-// Employee-Shift relation
 model EmployeeShift {
-  id          String   @id @default(cuid())
-  employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  shiftId     String
-  shift       Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  
+  id         String   @id
+  employeeId String
+  shiftId    String
+  createdAt  DateTime @default(now())
+  Shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  Employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
   @@unique([employeeId, shiftId])
 }
 
-// Attendance records
-model Attendance {
-  id          String   @id @default(cuid())
-  employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date        String   // YYYY-MM-DD
-  punchIn     String?  // HH:mm:ss
-  punchOut    String?  // HH:mm:ss
-  punchInLat  Float?
-  punchInLng  Float?
-  punchOutLat Float?
-  punchOutLng Float?
-  punchInPhoto  String?
-  punchOutPhoto String?
-  workHours   Float    @default(0)
-  overtime    Float    @default(0)
-  status      String   @default("present") // present, absent, late, half-day
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@unique([employeeId, date])
+model Expense {
+  id               String    @id
+  employeeId       String
+  title            String
+  description      String?
+  category         String
+  amount           Float
+  currency         String    @default("INR")
+  expenseDate      String
+  submittedAt      DateTime  @default(now())
+  receiptUrl       String?
+  status           String    @default("pending")
+  approvedBy       String?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  paidAt           DateTime?
+  paymentMethod    String?
+  paymentReference String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+  Employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@index([status])
+  @@index([employeeId])
 }
 
-// Leave management
+model Holiday {
+  id              String       @id
+  organizationId  String
+  holidayName     String
+  date            String
+  holidayType     String
+  description     String?
+  allowPunch      Boolean      @default(false)
+  isHalfDay       Boolean      @default(false)
+  isPaid          Boolean      @default(true)
+  isOptional      Boolean      @default(false)
+  compensatoryOff Boolean      @default(false)
+  isRecurring     Boolean      @default(false)
+  recurringDay    Int?
+  status          String       @default("draft")
+  syncSource      String?
+  createdBy       String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime
+  Organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, date])
+  @@index([date])
+  @@index([organizationId])
+}
+
+model IncentiveCategory {
+  id                String              @id
+  name              String
+  description       String?
+  amount            Float
+  organizationId    String
+  active            Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  EmployeeIncentive EmployeeIncentive[]
+  Organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
 model Leave {
-  id          String   @id @default(cuid())
-  employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  type        String   // sick, casual, earned, unpaid
-  startDate   String   // YYYY-MM-DD
-  endDate     String   // YYYY-MM-DD
-  reason      String?
-  status          String   @default("pending") // pending, approved, rejected
-  attendanceAllow  Boolean  @default(true)  // Admin sets: can employee do attendance on leave days
+  id              String    @id
+  employeeId      String
+  type            String
+  startDate       String
+  endDate         String
+  reason          String?
+  status          String    @default("pending")
+  attendanceAllow Boolean   @default(true)
   approvedBy      String?
   approvedAt      DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime
+  Employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
 
-// Salary records
-model SalaryRecord {
-  id          String   @id @default(cuid())
-  employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  month       String   // YYYY-MM
-  baseSalary  Float
-  overtime    Float    @default(0)
-  incentives  Float    @default(0)
-  deductions  Float    @default(0)
-  netSalary   Float
-  status      String   @default("pending") // pending, paid
-  paidAt      DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  @@unique([employeeId, month])
+model Organization {
+  id                String              @id
+  name              String
+  address           String
+  gst               String?
+  adminId           String              @unique
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  Announcement      Announcement[]
+  Employee          Employee[]
+  Holiday           Holiday[]
+  IncentiveCategory IncentiveCategory[]
+  Admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  Shift             Shift[]
 }
 
-// Incentive categories
-model IncentiveCategory {
-  id              String   @id @default(cuid())
-  name            String
-  description     String?
-  amount          Float
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employeeIncentives EmployeeIncentive[]
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
-// Employee incentives
-model EmployeeIncentive {
-  id          String   @id @default(cuid())
-  employeeId  String
-  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  categoryId  String?
-  category    IncentiveCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  month       String   // YYYY-MM
-  amount      Float
-  reason      String   // Reason for incentive
-  type        String   @default("bonus") // bonus, performance, referral, attendance, other
-  notes       String?
-  createdAt   DateTime @default(now())
-  
-  @@index([employeeId])
-  @@index([month])
-}
-
-// Announcements
-model Announcement {
-  id              String   @id @default(cuid())
-  title           String
-  message         String
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
-// Holiday Management
-model Holiday {
-  id              String   @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  
-  holidayName     String
-  date            String   // YYYY-MM-DD format
-  holidayType     String   // national, festival, weekly, company, emergency
-  description     String?
-  
-  // Attendance Control
-  allowPunch      Boolean  @default(false)  // Allow attendance on holiday
-  
-  // Holiday Duration
-  isHalfDay       Boolean  @default(false)  // Half-day holiday vs full-day
-  
-  // Payment Control
-  isPaid          Boolean  @default(true)   // Paid holiday (salary not deducted)
-  
-  // Employee Choice
-  isOptional      Boolean  @default(false)  // Employee can choose to work
-  
-  // Compensatory Off
-  compensatoryOff Boolean  @default(false)  // If employee works, get comp off later
-  
-  // Recurring
-  isRecurring     Boolean  @default(false)  // Weekly off recurring
-  recurringDay    Int?     // 0-6 for weekly off (0=Sunday)
-  
-  // Status - draft = not visible to employees, active = visible to employees
-  status          String   @default("draft") // draft, active, cancelled, postponed
-  
-  // Source tracking
-  syncSource      String?  // google-calendar, static-database, manual
-  
-  createdBy       String   // Admin ID
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@unique([organizationId, date])
-  @@index([organizationId])
-  @@index([date])
-}
-
-// Expense Management
-model Expense {
-  id              String   @id @default(cuid())
-  employeeId      String
-  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  
-  // Expense Details
-  title           String
-  description     String?
-  category        String   // medical, petrol, food, travel, equipment, other
-  amount          Float
-  currency        String   @default("INR")
-  
-  // Dates
-  expenseDate     String   // YYYY-MM-DD - when expense occurred
-  submittedAt     DateTime @default(now())
-  
-  // Receipt/Proof
-  receiptUrl      String?  // Image/document URL
-  
-  // Status
-  status          String   @default("pending") // pending, approved, rejected, paid
-  approvedBy      String?  // Admin ID who approved
-  approvedAt      DateTime?
-  rejectedAt      DateTime?
-  rejectionReason String?
-  paidAt          DateTime?
-  
-  // Payment Details
-  paymentMethod   String?  // cash, bank, upi
-  paymentReference String? // Transaction ID
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  @@index([employeeId])
-  @@index([status])
-  @@index([category])
-}
-
-// Payroll Management - Monthly salary adjustments
 model PayrollAdjustment {
-  id              String   @id @default(cuid())
+  id              String    @id
   employeeId      String
-  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  
-  month           String   // YYYY-MM
-  baseSalary      Float    @default(0)
-  bonus           Float    @default(0)
-  deductions      Float    @default(0)
-  advance         Float    @default(0)  // Salary advance
-  advanceRecovery Float    @default(0)  // Recovery from advance
-  
-  netSalary       Float    @default(0)
-  
+  month           String
+  baseSalary      Float     @default(0)
+  bonus           Float     @default(0)
+  deductions      Float     @default(0)
+  advance         Float     @default(0)
+  advanceRecovery Float     @default(0)
+  netSalary       Float     @default(0)
   notes           String?
-  
-  status          String   @default("pending") // pending, paid
+  status          String    @default("pending")
   paidAt          DateTime?
-  
-  createdBy       String   // Admin ID
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  createdBy       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime
+  Employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
   @@unique([employeeId, month])
   @@index([month])
+}
+
+model SalaryRecord {
+  id         String    @id
+  employeeId String
+  month      String
+  baseSalary Float
+  overtime   Float     @default(0)
+  incentives Float     @default(0)
+  deductions Float     @default(0)
+  netSalary  Float
+  status     String    @default("pending")
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime
+  Employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month])
+}
+
+model Shift {
+  id             String          @id
+  name           String
+  startTime      String
+  endTime        String
+  graceMinutes   Int             @default(15)
+  organizationId String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime
+  EmployeeShift  EmployeeShift[]
+  Organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }

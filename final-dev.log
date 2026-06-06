@@ -1,0 +1,11 @@
+$ NODE_OPTIONS='--max-old-space-size=4096' next dev -p 3000
+▲ Next.js 16.1.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://21.0.21.205:3000
+- Environments: .env
+
+✓ Starting...
+✓ Ready in 656ms
+ GET / 200 in 1736ms (compile: 1471ms, render: 265ms)
+ GET / 200 in 42ms (compile: 5ms, render: 37ms)
+ GET /manifest.json 404 in 113ms (compile: 52ms, render: 61ms)
