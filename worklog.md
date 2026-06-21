@@ -159,3 +159,32 @@ Stage Summary:
 - All data (employees, attendance, leaves, salary, holidays, expenses, payroll, incentives, announcements) is stored in SQLite database
 - Phone format ke baad bhi data safe hai kyunki data server-side SQLite database mein hai (6.9 GB storage available)
 - Maximum capacity: ~30-40 lakh employees with full data in available storage
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix login issue - create demo admin/employee credentials and fix Prisma relation bug
+
+Work Log:
+- Discovered root cause: API routes used `include: { organization: true }` (lowercase) but Prisma schema defines relation as `Organization` (PascalCase)
+- This caused all login attempts to fail with 500 error (caught by try/catch)
+- Created debug API route to isolate and confirm the bcrypt + Prisma issue
+- Fixed `/src/app/api/auth/login/route.ts`: `organization` → `Organization` in include and property access
+- Fixed `/src/app/api/admin/route.ts`: All 4 occurrences of `organization` → `Organization`
+- Fixed `/src/app/api/employees/route.ts`: All 4 occurrences of `organization` → `Organization`
+- Set demo admin credentials: userId=`admin`, password=`admin123`, securityPassword=`123456`
+- Set demo employee credentials: userId=`employee`, password=`emp123`, securityPassword=`123456`
+- Added Demo Credentials card on login screen with auto-fill buttons (click to fill)
+- Added `Info` icon import to login-screen.tsx
+- Fixed toast message to show correct role ("Login as Admin" vs "Login as Employee")
+- Removed debug API route after fixing
+- Lint: 0 errors
+- Browser verified: Admin login → Admin Dashboard, Employee login → Employee Dashboard
+
+Stage Summary:
+- **Root cause of login failure**: Prisma relation field casing mismatch (`organization` vs `Organization`)
+- Demo Admin: userId=`admin`, password=`admin123`
+- Demo Employee: userId=`employee`, password=`emp123`
+- Security Password (for both): `123456`
+- Login screen now shows clickable demo credential buttons for quick testing
+- All API routes fixed to use correct PascalCase `Organization` relation name

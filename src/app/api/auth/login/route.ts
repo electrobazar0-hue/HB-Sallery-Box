@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       // Check admin credentials
       const admin = await db.admin.findUnique({
         where: { userId },
-        include: { organization: true },
+        include: { Organization: true },
       });
 
       if (!admin) {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
       // Verify password
       const isValidPassword = await bcrypt.compare(password, admin.password);
-      
+
       if (!isValidPassword) {
         return NextResponse.json({
           success: false,
@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
           phone: admin.phone,
           email: admin.email,
           role: 'admin',
-          organizationId: admin.organization?.id || null,
-          organizationName: admin.organization?.name || null,
+          organizationId: admin.Organization?.id || null,
+          organizationName: admin.Organization?.name || null,
           profilePhoto: admin.profilePhoto,
         },
       });
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       // Check employee credentials
       const employee = await db.employee.findUnique({
         where: { userId },
-        include: { organization: true },
+        include: { Organization: true },
       });
 
       if (!employee) {
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
 
       // Verify password
       const isValidPassword = await bcrypt.compare(password, employee.password);
-      
+
       if (!isValidPassword) {
         return NextResponse.json({
           success: false,
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
           department: employee.department,
           salary: employee.salary,
           organizationId: employee.organizationId,
-          organizationName: employee.organization?.name || null,
+          organizationName: employee.Organization?.name || null,
           profilePhoto: employee.profilePhoto,
           geofenceEnabled: employee.geofenceEnabled,
           geofenceLat: employee.geofenceLat,

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
       const employee = await db.employee.findUnique({
         where: { phone },
         include: {
-          organization: true,
+          Organization: true,
           shifts: {
             include: { shift: true },
           },
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
           salary: employee.salary,
           overtimeRate: employee.overtimeRate,
           organizationId: employee.organizationId,
-          organizationName: employee.organization?.name || null,
+          organizationName: employee.Organization?.name || null,
           profilePhoto: employee.profilePhoto,
           active: employee.active,
           shifts: employee.shifts,
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     try {
       const employee = await db.employee.findUnique({
         where: { userId },
-        include: { organization: true },
+        include: { Organization: true },
       });
 
       if (!employee) {
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
           department: employee.department,
           salary: employee.salary,
           organizationId: employee.organizationId,
-          organizationName: employee.organization?.name || null,
+          organizationName: employee.Organization?.name || null,
           profilePhoto: employee.profilePhoto,
           active: employee.active,
         },
