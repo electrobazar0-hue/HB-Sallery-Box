@@ -19,8 +19,8 @@ model Admin {
   profilePhoto     String?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime
-  Employee         Employee[]
-  Organization     Organization?
+  employees        Employee[]
+  organization     Organization?
 }
 
 model Announcement {
@@ -31,7 +31,7 @@ model Announcement {
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime
-  Organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model Attendance {
@@ -52,7 +52,7 @@ model Attendance {
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime
-  Employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
 }
@@ -87,29 +87,29 @@ model Employee {
   geofenceRadius    Float?              @default(100)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime
-  Attendance        Attendance[]
-  Admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  Organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  EmployeeIncentive EmployeeIncentive[]
-  EmployeeShift     EmployeeShift[]
-  Expense           Expense[]
-  Leave             Leave[]
-  PayrollAdjustment PayrollAdjustment[]
-  SalaryRecord      SalaryRecord[]
+  attendance        Attendance[]
+  admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  incentives        EmployeeIncentive[]
+  shifts            EmployeeShift[]
+  expenses          Expense[]
+  leaves            Leave[]
+  payrollAdjustments PayrollAdjustment[]
+  salaryRecords     SalaryRecord[]
 }
 
 model EmployeeIncentive {
-  id                String             @id
-  employeeId        String
-  categoryId        String?
-  month             String
-  amount            Float
-  reason            String
-  type              String             @default("bonus")
-  notes             String?
-  createdAt         DateTime           @default(now())
-  IncentiveCategory IncentiveCategory? @relation(fields: [categoryId], references: [id])
-  Employee          Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id               String             @id
+  employeeId       String
+  categoryId       String?
+  month            String
+  amount           Float
+  reason           String
+  type             String             @default("bonus")
+  notes            String?
+  createdAt        DateTime           @default(now())
+  category          IncentiveCategory? @relation(fields: [categoryId], references: [id])
+  employee         Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([month])
   @@index([employeeId])
@@ -120,8 +120,8 @@ model EmployeeShift {
   employeeId String
   shiftId    String
   createdAt  DateTime @default(now())
-  Shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  Employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shift      Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, shiftId])
 }
@@ -147,7 +147,7 @@ model Expense {
   paymentReference String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime
-  Employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([category])
   @@index([status])
@@ -173,7 +173,7 @@ model Holiday {
   createdBy       String
   createdAt       DateTime     @default(now())
   updatedAt       DateTime
-  Organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, date])
   @@index([date])
@@ -189,8 +189,8 @@ model IncentiveCategory {
   active            Boolean             @default(true)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime
-  EmployeeIncentive EmployeeIncentive[]
-  Organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeIncentives EmployeeIncentive[]
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model Leave {
@@ -206,7 +206,7 @@ model Leave {
   approvedAt      DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime
-  Employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
 
 model Organization {
@@ -217,12 +217,12 @@ model Organization {
   adminId           String              @unique
   createdAt         DateTime            @default(now())
   updatedAt         DateTime
-  Announcement      Announcement[]
-  Employee          Employee[]
-  Holiday           Holiday[]
-  IncentiveCategory IncentiveCategory[]
-  Admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  Shift             Shift[]
+  announcements     Announcement[]
+  employees         Employee[]
+  holidays          Holiday[]
+  incentiveCategories IncentiveCategory[]
+  admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  shifts            Shift[]
 }
 
 model PayrollAdjustment {
@@ -241,7 +241,7 @@ model PayrollAdjustment {
   createdBy       String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime
-  Employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, month])
   @@index([month])
@@ -260,7 +260,7 @@ model SalaryRecord {
   paidAt     DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime
-  Employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, month])
 }
@@ -274,6 +274,6 @@ model Shift {
   organizationId String
   createdAt      DateTime        @default(now())
   updatedAt      DateTime
-  EmployeeShift  EmployeeShift[]
-  Organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees        EmployeeShift[]
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }

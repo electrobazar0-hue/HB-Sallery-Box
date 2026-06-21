@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-// Create a fresh Prisma client instance to avoid caching issues
-const prisma = new PrismaClient();
+import { db } from '@/lib/db';
 
 // GET /api/expenses - Get expenses
 export async function GET(request: NextRequest) {
@@ -34,7 +31,7 @@ export async function GET(request: NextRequest) {
       where.expenseDate = { startsWith: month };
     }
 
-    const expenses = await prisma.expense.findMany({
+    const expenses = await db.expense.findMany({
       where,
       include: {
         employee: {
@@ -79,7 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify employee exists
-    const employee = await prisma.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
     });
 
@@ -87,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
     }
 
-    const expense = await prisma.expense.create({
+    const expense = await db.expense.create({
       data: {
         employeeId,
         title,
@@ -142,7 +139,7 @@ export async function PUT(request: NextRequest) {
       updateData.paymentReference = paymentReference || null;
     }
 
-    const expense = await prisma.expense.update({
+    const expense = await db.expense.update({
       where: { id },
       data: updateData,
       include: {
@@ -174,7 +171,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Only allow deleting pending expenses
-    const expense = await prisma.expense.findUnique({
+    const expense = await db.expense.findUnique({
       where: { id },
     });
 
@@ -188,7 +185,7 @@ export async function DELETE(request: NextRequest) {
       }, { status: 400 });
     }
 
-    await prisma.expense.delete({
+    await db.expense.delete({
       where: { id },
     });
 

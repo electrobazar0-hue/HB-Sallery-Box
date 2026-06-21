@@ -16,11 +16,11 @@ export async function GET(request: NextRequest) {
     let admin;
 
     if (userId) {
-      admin = await db.admin.findUnique({ where: { userId }, include: { Organization: true } });
+      admin = await db.admin.findUnique({ where: { userId }, include: { organization: true } });
     } else if (phone) {
-      admin = await db.admin.findUnique({ where: { phone }, include: { Organization: true } });
+      admin = await db.admin.findUnique({ where: { phone }, include: { organization: true } });
     } else {
-      admin = await db.admin.findUnique({ where: { id: id! }, include: { Organization: true } });
+      admin = await db.admin.findUnique({ where: { id: id! }, include: { organization: true } });
     }
 
     if (!admin) {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
         email: admin.email,
         address: admin.address,
         profilePhoto: admin.profilePhoto,
-        organization: admin.Organization,
+        organization: admin.organization,
       },
     });
   } catch (error) {
@@ -71,13 +71,13 @@ export async function PUT(request: NextRequest) {
     const admin = await db.admin.update({
       where: { id },
       data: updateData,
-      include: { Organization: true },
+      include: { organization: true },
     });
 
     // Also update organization if provided
-    if (data.organizationName && admin.Organization?.id) {
+    if (data.organizationName && admin.organization?.id) {
       await db.organization.update({
-        where: { id: admin.Organization.id },
+        where: { id: admin.organization.id },
         data: { 
           name: data.organizationName,
           address: data.organizationAddress,

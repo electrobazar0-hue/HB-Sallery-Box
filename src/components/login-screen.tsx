@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Lock, ArrowRight, Shield, Users, UserPlus, AlertCircle, Loader2, Eye, EyeOff, Wifi, WifiOff, KeyRound, RefreshCcw, Info } from 'lucide-react';
+import { User, Lock, ArrowRight, Shield, Users, UserPlus, AlertCircle, Loader2, Eye, EyeOff, Wifi, WifiOff, KeyRound, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -269,50 +269,6 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
               <span className="text-xs text-blue-600 font-medium">🔐 {t.auth.userId} / {t.auth.password}</span>
             </div>
           </div>
-
-          {/* Demo Credentials */}
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.4 }}
-            className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Info className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Demo Credentials</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRole('admin');
-                  setUserId('admin');
-                  setPassword('admin123');
-                  setError('');
-                }}
-                className="text-left p-2 rounded-lg bg-background/60 hover:bg-background transition-colors cursor-pointer border border-transparent hover:border-amber-500/30"
-              >
-                <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">🔐 Admin</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">ID: <span className="font-mono text-foreground">admin</span></div>
-                <div className="text-[11px] text-muted-foreground">Pass: <span className="font-mono text-foreground">admin123</span></div>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRole('employee');
-                  setUserId('employee');
-                  setPassword('emp123');
-                  setError('');
-                }}
-                className="text-left p-2 rounded-lg bg-background/60 hover:bg-background transition-colors cursor-pointer border border-transparent hover:border-amber-500/30"
-              >
-                <div className="text-xs font-medium text-blue-600 dark:text-blue-400">👤 Employee</div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">ID: <span className="font-mono text-foreground">employee</span></div>
-                <div className="text-[11px] text-muted-foreground">Pass: <span className="font-mono text-foreground">emp123</span></div>
-              </button>
-            </div>
-            <p className="text-[10px] text-amber-600/70 dark:text-amber-400/70 mt-1.5 text-center">Click to auto-fill credentials</p>
-          </motion.div>
 
           {/* Login Card */}
           <Card className="border-0 shadow-2xl bg-card/50 backdrop-blur-sm">

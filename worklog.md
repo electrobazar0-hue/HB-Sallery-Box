@@ -188,3 +188,42 @@ Stage Summary:
 - Security Password (for both): `123456`
 - Login screen now shows clickable demo credential buttons for quick testing
 - All API routes fixed to use correct PascalCase `Organization` relation name
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Fix all API errors (attendance, salary, leaves, etc.) and remove demo credentials
+
+Work Log:
+- Diagnosed root cause: Prisma schema had PascalCase relation field names (`Employee`, `Organization`, `Shift`, `EmployeeShift`, `IncentiveCategory`, etc.) but ALL API routes and frontend code used camelCase (`employee`, `organization`, `shift`, etc.)
+- Previous fix (Task 6) only patched 3 routes to use PascalCase, which was the wrong approach
+- **Proper fix**: Changed ALL relation field names in `prisma/schema.prisma` to camelCase to match existing code
+  - `Admin.Organization` → `Admin.organization`
+  - `Admin.Employee` → `Admin.employees`
+  - `Attendance.Employee` → `Attendance.employee`
+  - `Employee.Organization` → `Employee.organization`
+  - `Employee.EmployeeShift` → `Employee.shifts`
+  - `Employee.EmployeeIncentive` → `Employee.incentives`
+  - `EmployeeShift.Shift` → `EmployeeShift.shift` (already correct)
+  - `EmployeeShift.Employee` → `EmployeeShift.employee` (already correct)
+  - `Shift.EmployeeShift` → `Shift.employees`
+  - `Shift.Organization` → `Shift.organization`
+  - `EmployeeIncentive.IncentiveCategory` → `EmployeeIncentive.category`
+  - `EmployeeIncentive.Employee` → `EmployeeIncentive.employee`
+  - And all other models' relation fields
+- Reverted earlier PascalCase patches in auth/login, admin, employees routes back to lowercase
+- Regenerated Prisma client (`prisma generate`) — DB already in sync
+- Removed `log: ['query']` from db.ts to reduce memory overhead
+- Fixed payroll/route.ts and expenses/route.ts to use shared `db` instance instead of creating separate PrismaClient
+- Removed demo credentials card from login screen
+- Removed unused `Info` icon import
+- Fixed `RefreshCw` → `RefreshCcw` typo in import
+- Verified ALL 10 APIs pass: LOGIN_ADM, LOGIN_EMP, ATTENDANCE, SALARY, LEAVES, SHIFTS, INCENTIVES, EXPENSES, PAYROLL, HOLIDAYS
+- Lint: 0 errors
+
+Stage Summary:
+- **Root cause of ALL API failures**: Prisma schema used PascalCase relation names but code used camelCase
+- **Fix approach**: Changed schema relation names to camelCase (proper fix, not patching each route)
+- All 10 API endpoints verified working
+- Demo credentials removed from login UI
+- Demo accounts still exist in DB: admin/admin123, employee/emp123

@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-
-// Create a fresh Prisma client instance to avoid caching issues
-const prisma = new PrismaClient();
+import { db } from '@/lib/db';
 
 // GET /api/payroll - Get payroll adjustments
 export async function GET(request: NextRequest) {
@@ -28,7 +25,7 @@ export async function GET(request: NextRequest) {
       where.status = status;
     }
 
-    const payroll = await prisma.payrollAdjustment.findMany({
+    const payroll = await db.payrollAdjustment.findMany({
       where,
       include: {
         employee: {
@@ -75,7 +72,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify employee exists
-    const employee = await prisma.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
     });
 
@@ -93,7 +90,7 @@ export async function POST(request: NextRequest) {
     const netSalary = base + bonusAmount + recoveryAmount - deductionAmount - advanceAmount;
 
     // Upsert payroll adjustment
-    const payroll = await prisma.payrollAdjustment.upsert({
+    const payroll = await db.payrollAdjustment.upsert({
       where: {
         employeeId_month: {
           employeeId,
@@ -157,7 +154,7 @@ export async function PUT(request: NextRequest) {
       updateData.paidAt = new Date();
     }
 
-    const payroll = await prisma.payrollAdjustment.update({
+    const payroll = await db.payrollAdjustment.update({
       where: { id },
       data: updateData,
       include: {
@@ -188,7 +185,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Payroll ID is required' }, { status: 400 });
     }
 
-    await prisma.payrollAdjustment.delete({
+    await db.payrollAdjustment.delete({
       where: { id },
     });
 
