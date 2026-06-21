@@ -19,8 +19,7 @@ export interface User {
   profilePhoto?: string;
   biometricEnabled?: boolean;
   active?: boolean;
-  loginTime?: number; // Timestamp for session tracking
-  // Geofence settings for employees
+  loginTime?: number;
   geofenceEnabled?: boolean;
   geofenceLat?: number;
   geofenceLng?: number;
@@ -39,12 +38,21 @@ interface AuthState {
   verifySession: () => boolean;
 }
 
+// Safe storage that works on both server and client
+const safeStorage = typeof window !== 'undefined'
+  ? createJSONStorage(() => localStorage)
+  : {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    };
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
       isAuthenticated: false,
-      isLoading: true,
+      isLoading: false,
       login: (user) => set({
         user: { ...user, loginTime: Date.now() },
         isAuthenticated: true,
@@ -60,18 +68,15 @@ export const useAuthStore = create<AuthState>()(
       })),
       verifySession: () => {
         const { user, isAuthenticated } = get();
-        // Only check if user exists — no time-based expiry
-        // Login persists until explicit logout button click
         if (!user || !isAuthenticated) return false;
         return true;
       },
     }),
     {
       name: 'hb-sallery-box-auth',
-      storage: createJSONStorage(() => localStorage), // localStorage — persists across tab close & browser restart
+      storage: safeStorage,
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // No expiry check — just restore session as-is
           state.setLoading(false);
         }
       },

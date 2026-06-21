@@ -11,16 +11,20 @@ interface SplashScreenProps {
 
 // Get dark mode state from system
 function getDarkModeSnapshot(): boolean {
-  if (typeof window === 'undefined') return false;
-  
-  // Check localStorage first (theme set by user in settings)
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme === 'dark') return true;
-  if (savedTheme === 'light') return false;
-  
-  // Then check system preference
-  if (window.matchMedia) {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  try {
+    if (typeof window === 'undefined') return false;
+    
+    // Check localStorage first (theme set by user in settings)
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'dark') return true;
+    if (savedTheme === 'light') return false;
+    
+    // Then check system preference
+    if (window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+  } catch {
+    // Ignore errors during SSR
   }
   
   return false;
@@ -28,23 +32,24 @@ function getDarkModeSnapshot(): boolean {
 
 // Subscribe to dark mode changes
 function subscribeToDarkMode(callback: () => void) {
-  if (typeof window === 'undefined') return () => {};
-  
-  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-  
-  // Handler for storage changes (theme setting)
-  const storageHandler = () => callback();
-  
-  // Handler for system theme changes
-  const mediaQueryHandler = () => callback();
-  
-  window.addEventListener('storage', storageHandler);
-  mediaQuery.addEventListener('change', mediaQueryHandler);
-  
-  return () => {
-    window.removeEventListener('storage', storageHandler);
-    mediaQuery.removeEventListener('change', mediaQueryHandler);
-  };
+  try {
+    if (typeof window === 'undefined') return () => {};
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    const storageHandler = () => callback();
+    const mediaQueryHandler = () => callback();
+    
+    window.addEventListener('storage', storageHandler);
+    mediaQuery.addEventListener('change', mediaQueryHandler);
+    
+    return () => {
+      window.removeEventListener('storage', storageHandler);
+      mediaQuery.removeEventListener('change', mediaQueryHandler);
+    };
+  } catch {
+    return () => {};
+  }
 }
 
 // Hook to detect system theme using sync external store

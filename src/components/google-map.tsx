@@ -195,8 +195,6 @@ export function GoogleMap({
 // Type declaration for global window object
 declare global {
   interface Window {
-    google?: {
-      maps: typeof google.maps;
-    };
+    google?: Record<string, any>;
   }
 }

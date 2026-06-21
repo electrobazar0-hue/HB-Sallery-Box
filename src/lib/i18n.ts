@@ -33,6 +33,15 @@ function getNestedValue(obj: Record<string, unknown>, path: string): string {
   return typeof result === 'string' ? result : path;
 }
 
+// Safe storage that works on both server and client
+const safeStorage = typeof window !== 'undefined'
+  ? createJSONStorage(() => localStorage)
+  : {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    };
+
 export const useLanguageStore = create<LanguageState>()(
   persist(
     (set, get) => ({
@@ -49,10 +58,9 @@ export const useLanguageStore = create<LanguageState>()(
     }),
     {
       name: 'hb-sallery-language',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ language: state.language }), // Only persist language
+      storage: safeStorage,
+      partialize: (state) => ({ language: state.language }),
       onRehydrateStorage: () => (state) => {
-        // Restore t based on persisted language
         if (state && state.language) {
           state.t = translations[state.language];
         }
