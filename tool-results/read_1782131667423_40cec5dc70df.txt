@@ -1,0 +1,1927 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  LogOut, Users, Clock, DollarSign, Calendar,
+     7→  Bell, ChevronRight, FileText, Settings,
+     8→  Home, Menu, X, Star, MessageSquare, Edit,
+     9→  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle
+    10→} from 'lucide-react';
+    11→import { Button } from '@/components/ui/button';
+    12→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    13→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    14→import { Badge } from '@/components/ui/badge';
+    15→import { ThemeToggle } from '@/components/theme-toggle';
+    16→import { LanguageToggle } from '@/components/language-toggle';
+    17→import { Input } from '@/components/ui/input';
+    18→import { Label } from '@/components/ui/label';
+    19→import { Textarea } from '@/components/ui/textarea';
+    20→import { useAuthStore } from '@/store/auth-store';
+    21→import {
+    22→  Dialog,
+    23→  DialogContent,
+    24→  DialogDescription,
+    25→  DialogHeader,
+    26→  DialogTitle,
+    27→} from '@/components/ui/dialog';
+    28→import { ScrollArea } from '@/components/ui/scroll-area';
+    29→import { ShiftManagement } from '@/components/shift-management';
+    30→import { PhotoPicker } from '@/components/photo-picker';
+    31→import { EmployeeActivities } from '@/components/employee-activities';
+    32→import { HolidayManagement } from '@/components/holiday-management';
+    33→import { useNotifications, NotificationData } from '@/hooks/use-notifications';
+    34→import { useLanguageStore } from '@/lib/i18n';
+    35→
+    36→interface AdminDashboardProps {
+    37→  onLogout: () => void;
+    38→  onSettings: () => void;
+    39→}
+    40→
+    41→// Types
+    42→interface Employee {
+    43→  id: string;
+    44→  name: string;
+    45→  phone: string;
+    46→  email?: string;
+    47→  address?: string;
+    48→  designation?: string;
+    49→  department?: string;
+    50→  salary: number;
+    51→  active: boolean;
+    52→  starOfMonth: boolean;
+    53→  biometricEnabled: boolean;
+    54→  aadharNumber?: string;
+    55→  panNumber?: string;
+    56→  accountNumber?: string;
+    57→  ifscCode?: string;
+    58→  upiId?: string;
+    59→  profilePhoto?: string;
+    60→}
+    61→
+    62→interface SalaryRecord {
+    63→  id: string;
+    64→  employeeId: string;
+    65→  month: string;
+    66→  baseSalary: number;
+    67→  overtime: number;
+    68→  incentives: number;
+    69→  deductions: number;
+    70→  netSalary: number;
+    71→  status: string;
+    72→  paidAt?: string;
+    73→}
+    74→
+    75→interface AttendanceRecord {
+    76→  id: string;
+    77→  employeeId: string;
+    78→  employee: { name: string; designation?: string };
+    79→  date: string;
+    80→  punchIn?: string;
+    81→  punchOut?: string;
+    82→  punchInLat?: number;
+    83→  punchInLng?: number;
+    84→  punchOutLat?: number;
+    85→  punchOutLng?: number;
+    86→  punchInPhoto?: string;
+    87→  punchOutPhoto?: string;
+    88→  workHours: number;
+    89→  status: string;
+    90→}
+    91→
+    92→interface LeaveRequest {
+    93→  id: string;
+    94→  employeeId: string;
+    95→  employee: { name: string; designation?: string };
+    96→  type: string;
+    97→  startDate: string;
+    98→  endDate: string;
+    99→  reason?: string;
+   100→  status: string;
+   101→}
+   102→
+   103→interface ExpenseRecord {
+   104→  id: string;
+   105→  employeeId: string;
+   106→  employee?: { name: string; designation?: string; department?: string };
+   107→  title: string;
+   108→  description?: string;
+   109→  category: string;
+   110→  amount: number;
+   111→  expenseDate: string;
+   112→  status: string;
+   113→  rejectionReason?: string;
+   114→  createdAt: string;
+   115→}
+   116→
+   117→interface PayrollRecord {
+   118→  id: string;
+   119→  employeeId: string;
+   120→  employee?: { name: string; designation?: string; department?: string; salary: number };
+   121→  month: string;
+   122→  baseSalary: number;
+   123→  bonus: number;
+   124→  deductions: number;
+   125→  advance: number;
+   126→  advanceRecovery: number;
+   127→  netSalary: number;
+   128→  status: string;
+   129→  notes?: string;
+   130→}
+   131→
+   132→interface IncentiveRecord {
+   133→  id: string;
+   134→  employeeId: string;
+   135→  employee?: { name: string; designation?: string };
+   136→  amount: number;
+   137→  reason: string;
+   138→  type: 'bonus' | 'performance' | 'referral' | 'attendance' | 'other';
+   139→  date: string;
+   140→  month?: string;
+   141→}
+   142→
+   143→export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
+   144→  const { user, updateUser, updateOrganizationLogo } = useAuthStore();
+   145→  const { t } = useLanguageStore();
+   146→  const [activeTab, setActiveTab] = useState('home');
+   147→  const [sidebarOpen, setSidebarOpen] = useState(false);
+   148→  const [employees, setEmployees] = useState<Employee[]>([]);
+   149→  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+   150→  const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
+   151→  const [isLoading, setIsLoading] = useState(false);
+   152→  
+   153→  // Modals
+   154→  const [showAddEmployee, setShowAddEmployee] = useState(false);
+   155→  const [showAttendance, setShowAttendance] = useState(false);
+   156→  const [showLeaves, setShowLeaves] = useState(false);
+   157→  const [showShiftManagement, setShowShiftManagement] = useState(false);
+   158→  const [showSalaryManagement, setShowSalaryManagement] = useState(false);
+   159→  const [showAnnouncement, setShowAnnouncement] = useState(false);
+   160→  const [showNotifications, setShowNotifications] = useState(false);
+   161→  const [showProfilePhotoPicker, setShowProfilePhotoPicker] = useState(false);
+   162→  const [showOrgLogoPicker, setShowOrgLogoPicker] = useState(false);
+   163→  const [showEmployeeActivities, setShowEmployeeActivities] = useState(false);
+   164→  const [showHolidayManagement, setShowHolidayManagement] = useState(false);
+   165→  const [showEmployeeList, setShowEmployeeList] = useState(false);
+   166→  const [showPaySalary, setShowPaySalary] = useState(false);
+   167→  const [showIncentives, setShowIncentives] = useState(false);
+   168→  const [showAllLeaves, setShowAllLeaves] = useState(false);
+   169→  const [leaveFilter, setLeaveFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+   170→  const [showApproveDialog, setShowApproveDialog] = useState(false);
+   171→  const [approvingLeave, setApprovingLeave] = useState<any>(null);
+   172→  const [allLeaves, setAllLeaves] = useState<LeaveRequest[]>([]);
+   173→  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+   174→  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+   175→  const [salaryRecords, setSalaryRecords] = useState<SalaryRecord[]>([]);
+   176→  const [incentiveRecords, setIncentiveRecords] = useState<IncentiveRecord[]>([]);
+   177→  const [incentiveEmployee, setIncentiveEmployee] = useState<Employee | null>(null);
+   178→  const [showAddIncentive, setShowAddIncentive] = useState(false);
+   179→  const [customCategories, setCustomCategories] = useState<string[]>([]);
+   180→  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+   181→  const [newCategoryName, setNewCategoryName] = useState('');
+   182→  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+   183→  const [showExpenses, setShowExpenses] = useState(false);
+   184→  const [expenseFilter, setExpenseFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'paid'>('all');
+   185→  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+   186→  const [showPayroll, setShowPayroll] = useState(false);
+   187→  const [selectedPayrollMonth, setSelectedPayrollMonth] = useState(new Date().toISOString().slice(0, 7));
+   188→
+   189→  // Form states
+   190→  const [employeeForm, setEmployeeForm] = useState({
+   191→    name: '', phone: '', email: '', address: '', designation: '', department: '', salary: 0,
+   192→    userId: '', password: '', securityPassword: '',
+   193→    aadharNumber: '', panNumber: '', accountNumber: '', ifscCode: '', upiId: ''
+   194→  });
+   195→  const [salaryForm, setSalaryForm] = useState({
+   196→    month: '', baseSalary: 0, overtime: 0, incentives: 0, deductions: 0
+   197→  });
+   198→  const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '' });
+   199→  const [incentiveForm, setIncentiveForm] = useState({
+   200→    amount: 0, reason: '', type: 'bonus', month: new Date().toISOString().slice(0, 7)
+   201→  });
+   202→
+   203→  // Notifications
+   204→  const {
+   205→    notifications,
+   206→    unreadCount,
+   207→    addNotification,
+   208→    markAsRead,
+   209→    markAllAsRead,
+   210→  } = useNotifications({
+   211→    userId: user?.id || '',
+   212→    role: 'admin',
+   213→  });
+   214→
+   215→  const isAdmin = user?.role === 'admin';
+   216→
+   217→  const menuItems = [
+   218→    { id: 'home', label: t.dashboard.home, icon: Home },
+   219→    { id: 'employees', label: t.dashboard.employees, icon: Users },
+   220→    { id: 'attendance', label: t.dashboard.attendance, icon: Clock },
+   221→    { id: 'activities', label: t.dashboard.activities, icon: Activity },
+   222→    { id: 'leaves', label: t.leave.leaveRequests, icon: Calendar },
+   223→    { id: 'expenses', label: t.dashboard.expenseClaims, icon: Receipt },
+   224→    { id: 'payroll', label: t.payroll.payrollManagement, icon: Wallet },
+   225→    { id: 'salary', label: t.salary.salaryManagement, icon: DollarSign },
+   226→    { id: 'incentives', label: t.dashboard.incentives, icon: Star },
+   227→    { id: 'holidays', label: t.dashboard.holidays, icon: PartyPopper },
+   228→    { id: 'settings', label: t.common.settings, icon: Settings },
+   229→  ];
+   230→
+   231→  // Fetch data on mount
+   232→  useEffect(() => {
+   233→    if (!isAdmin || !user?.id) return;
+   234→    
+   235→    let mounted = true;
+   236→    
+   237→    const fetchData = async () => {
+   238→      // Fetch employees - NO DEMO DATA, only real data from database
+   239→      try {
+   240→        const response = await fetch(`/api/employees?adminId=${user.id}`);
+   241→        const data = await response.json();
+   242→        if (mounted && data.employees) {
+   243→          setEmployees(data.employees);
+   244→        }
+   245→      } catch (error) {
+   246→        console.error('Error fetching employees:', error);
+   247→        // Don't set demo data - keep empty array for fresh admin
+   248→        if (mounted) {
+   249→          setEmployees([]);
+   250→        }
+   251→      }
+   252→      
+   253→      // Fetch attendance - NO DEMO DATA
+   254→      if (user.organizationId) {
+   255→        try {
+   256→          const today = new Date().toISOString().split('T')[0];
+   257→          const response = await fetch(`/api/attendance?organizationId=${user.organizationId}&date=${today}`);
+   258→          const data = await response.json();
+   259→          if (mounted && data.attendance) {
+   260→            setAttendance(data.attendance);
+   261→          }
+   262→        } catch (error) {
+   263→          console.error('Error fetching attendance:', error);
+   264→          // Don't set demo data - keep empty array for fresh admin
+   265→          if (mounted) {
+   266→            setAttendance([]);
+   267→          }
+   268→        }
+   269→        
+   270→        // Fetch leaves - NO DEMO DATA
+   271→        try {
+   272→          const response = await fetch(`/api/leaves?organizationId=${user.organizationId}&status=pending`);
+   273→          const data = await response.json();
+   274→          if (mounted && data.leaves) {
+   275→            setLeaves(data.leaves);
+   276→          }
+   277→        } catch (error) {
+   278→          console.error('Error fetching leaves:', error);
+   279→          // Don't set demo data - keep empty array for fresh admin
+   280→          if (mounted) {
+   281→            setLeaves([]);
+   282→          }
+   283→        }
+   284→        
+   285→        // Fetch expenses - NO DEMO DATA
+   286→        try {
+   287→          const response = await fetch(`/api/expenses?organizationId=${user.organizationId}`);
+   288→          const data = await response.json();
+   289→          if (mounted && data.expenses) {
+   290→            setExpenses(data.expenses);
+   291→          }
+   292→        } catch (error) {
+   293→          console.error('Error fetching expenses:', error);
+   294→          if (mounted) {
+   295→            setExpenses([]);
+   296→          }
+   297→        }
+   298→      }
+   299→    };
+   300→    
+   301→    fetchData();
+   302→    
+   303→    return () => { mounted = false; };
+   304→  }, [isAdmin, user?.id, user?.organizationId]);
+   305→
+   306→  const handleAddEmployee = async () => {
+   307→    // Validation with detailed error messages
+   308→    if (!employeeForm.name?.trim()) {
+   309→      addNotification({ title: t.common.error, body: t.employee.validationName, type: 'announcement' });
+   310→      return;
+   311→    }
+   312→    if (!employeeForm.phone?.trim() || employeeForm.phone.length < 10) {
+   313→      addNotification({ title: t.common.error, body: t.employee.validationPhone, type: 'announcement' });
+   314→      return;
+   315→    }
+   316→    if (!employeeForm.userId?.trim() || employeeForm.userId.length < 4) {
+   317→      addNotification({ title: t.common.error, body: t.employee.validationUserId, type: 'announcement' });
+   318→      return;
+   319→    }
+   320→    if (!employeeForm.password || employeeForm.password.length < 6) {
+   321→      addNotification({ title: t.common.error, body: t.employee.validationPassword, type: 'announcement' });
+   322→      return;
+   323→    }
+   324→    if (!employeeForm.securityPassword || employeeForm.securityPassword.length < 4) {
+   325→      addNotification({ title: t.common.error, body: t.employee.validationSecurityPassword, type: 'announcement' });
+   326→      return;
+   327→    }
+   328→    if (!user?.id || !user?.organizationId) {
+   329→      addNotification({ title: t.common.error, body: t.employee.sessionExpired, type: 'announcement' });
+   330→      return;
+   331→    }
+   332→    
+   333→    setIsLoading(true);
+   334→    try {
+   335→      const response = await fetch('/api/employees', {
+   336→        method: 'POST',
+   337→        headers: { 'Content-Type': 'application/json' },
+   338→        body: JSON.stringify({
+   339→          name: employeeForm.name.trim(),
+   340→          phone: employeeForm.phone.replace(/\D/g, ''),
+   341→          email: employeeForm.email?.trim() || null,
+   342→          address: employeeForm.address?.trim() || null,
+   343→          designation: employeeForm.designation?.trim() || null,
+   344→          department: employeeForm.department?.trim() || null,
+   345→          salary: Number(employeeForm.salary) || 0,
+   346→          userId: employeeForm.userId.trim().toLowerCase(),
+   347→          password: employeeForm.password,
+   348→          securityPassword: employeeForm.securityPassword,
+   349→          aadharNumber: employeeForm.aadharNumber?.trim() || null,
+   350→          panNumber: employeeForm.panNumber?.trim() || null,
+   351→          accountNumber: employeeForm.accountNumber?.trim() || null,
+   352→          ifscCode: employeeForm.ifscCode?.trim() || null,
+   353→          upiId: employeeForm.upiId?.trim() || null,
+   354→          adminId: user.id,
+   355→          organizationId: user.organizationId,
+   356→        }),
+   357→      });
+   358→      const data = await response.json();
+   359→      
+   360→      if (response.ok && data.success) {
+   361→        setEmployees([...employees, data.employee]);
+   362→        addNotification({
+   363→          title: t.messages.employeeAdded,
+   364→          body: `${employeeForm.name} ${t.employee.employeeAddedSuccess}`,
+   365→          type: 'announcement',
+   366→        });
+   367→        // Reset form and close dialog
+   368→        setShowAddEmployee(false);
+   369→        setEmployeeForm({ 
+   370→          name: '', phone: '', email: '', address: '', designation: '', department: '', salary: 0, 
+   371→          userId: '', password: '', securityPassword: '',
+   372→          aadharNumber: '', panNumber: '', accountNumber: '', ifscCode: '', upiId: ''
+   373→        });
+   374→      } else {
+   375→        addNotification({
+   376→          title: t.common.error,
+   377→          body: data.error || t.employee.validationName,
+   378→          type: 'announcement',
+   379→        });
+   380→      }
+   381→    } catch (error) {
+   382→      console.error('Error adding employee:', error);
+   383→      addNotification({
+   384→        title: t.common.error,
+   385→        body: t.common.retry,
+   386→        type: 'announcement',
+   387→      });
+   388→    }
+   389→    setIsLoading(false);
+   390→  };
+   391→
+   392→  const handleToggleStar = async (id: string) => {
+   393→    const employee = employees.find(e => e.id === id);
+   394→    if (!employee) return;
+   395→    
+   396→    try {
+   397→      await fetch('/api/employees', {
+   398→        method: 'PUT',
+   399→        headers: { 'Content-Type': 'application/json' },
+   400→        body: JSON.stringify({ id, starOfMonth: !employee.starOfMonth }),
+   401→      });
+   402→    } catch {
+   403→      // Continue with local update
+   404→    }
+   405→    setEmployees(employees.map(e => e.id === id ? { ...e, starOfMonth: !e.starOfMonth } : e));
+   406→  };
+   407→
+   408→  const handleToggleBiometric = async (id: string) => {
+   409→    const employee = employees.find(e => e.id === id);
+   410→    if (!employee) return;
+   411→    
+   412→    try {
+   413→      await fetch('/api/employees', {
+   414→        method: 'PUT',
+   415→        headers: { 'Content-Type': 'application/json' },
+   416→        body: JSON.stringify({ id, biometricEnabled: !employee.biometricEnabled }),
+   417→      });
+   418→    } catch {
+   419→      // Continue with local update
+   420→    }
+   421→    setEmployees(employees.map(e => e.id === id ? { ...e, biometricEnabled: !e.biometricEnabled } : e));
+   422→  };
+   423→
+   424→  // Reject - one click direct
+   425→  const handleRejectLeave = async (leave: any) => {
+   426→    try {
+   427→      await fetch('/api/leaves', {
+   428→        method: 'PUT',
+   429→        headers: { 'Content-Type': 'application/json' },
+   430→        body: JSON.stringify({ id: leave.id, status: 'rejected', approvedBy: user?.id, attendanceAllow: false }),
+   431→      });
+   432→    } catch {
+   433→      // Continue with local update
+   434→    }
+   435→    addNotification({
+   436→      title: t.leave.leaveRejected,
+   437→      body: `${leave.employee.name} - ${t.leave.leaveRejected}`,
+   438→      type: 'leave',
+   439→ });
+   440→    setLeaves(leaves.filter(l => l.id !== leave.id));
+   441→    if (allLeaves.length > 0) fetchAllLeaves();
+   442→  };
+   443→
+   444→  // Approve - open dialog first for attendance allow/not allow
+   445→  const handleOpenApproveDialog = (leave: any) => {
+   446→    setApprovingLeave(leave);
+   447→    setShowApproveDialog(true);
+   448→  };
+   449→
+   450→  // Final approve after selecting attendance allow/not allow
+   451→  const handleConfirmApprove = async (attendanceAllow: boolean) => {
+   452→    if (!approvingLeave) return;
+   453→    setShowApproveDialog(false);
+   454→    try {
+   455→      await fetch('/api/leaves', {
+   456→        method: 'PUT',
+   457→        headers: { 'Content-Type': 'application/json' },
+   458→        body: JSON.stringify({ id: approvingLeave.id, status: 'approved', approvedBy: user?.id, attendanceAllow }),
+   459→      });
+   460→    } catch {
+   461→      // Continue with local update
+   462→    }
+   463→    addNotification({
+   464→      title: t.leave.leaveApproved,
+   465→      body: `${approvingLeave.employee.name} - ${t.leave.leaveApproved}. ${attendanceAllow ? t.leave.attendanceAllow : t.leave.attendanceNotAllow}.`,
+   466→
+   467→      type: 'leave',
+   468→    });
+   469→    setLeaves(leaves.filter(l => l.id !== approvingLeave.id));
+   470→    setApprovingLeave(null);
+   471→    if (allLeaves.length > 0) fetchAllLeaves();
+   472→  };
+   473→
+   474→  // Legacy handler kept for compatibility
+   475→  const handleLeaveAction = async (id: string, status: 'approved' | 'rejected') => {
+   476→    if (status === 'rejected') {
+   477→      const leave = leaves.find(l => l.id === id);
+   478→      if (leave) handleRejectLeave(leave);
+   479→    } else {
+   480→      const leave = leaves.find(l => l.id === id);
+   481→      if (leave) handleOpenApproveDialog(leave);
+   482→    }
+   483→  };
+   484→
+   485→  const handleExpenseAction = async (id: string, status: 'approved' | 'rejected' | 'paid', rejectionReason?: string) => {
+   486→    try {
+   487→      await fetch('/api/expenses', {
+   488→        method: 'PUT',
+   489→        headers: { 'Content-Type': 'application/json' },
+   490→        body: JSON.stringify({ 
+   491→          id, 
+   492→          status, 
+   493→          approvedBy: user?.id,
+   494→          rejectionReason 
+   495→        }),
+   496→      });
+   497→      // Update local state
+   498→      setExpenses(expenses.map(e => 
+   499→        e.id === id ? { ...e, status, rejectionReason } : e
+   500→      ));
+   501→      
+   502→      const expense = expenses.find(e => e.id === id);
+   503→      if (expense) {
+   504→        addNotification({
+   505→          title: `Expense ${status}`,
+   506→          body: `${expense.employee?.name || 'Employee'}'s expense claim of ₹${expense.amount} has been ${status}.`,
+   507→          type: 'expense',
+   508→        });
+   509→      }
+   510→    } catch (error) {
+   511→      console.error('Error updating expense:', error);
+   512→    }
+   513→  };
+   514→
+   515→  const handlePayrollSave = async (employeeId: string, data: {
+   516→    baseSalary: number;
+   517→    bonus: number;
+   518→    deductions: number;
+   519→    advance: number;
+   520→    advanceRecovery: number;
+   521→    notes?: string;
+   522→  }) => {
+   523→    try {
+   524→      const response = await fetch('/api/payroll', {
+   525→        method: 'POST',
+   526→        headers: { 'Content-Type': 'application/json' },
+   527→        body: JSON.stringify({
+   528→          employeeId,
+   529→          month: selectedPayrollMonth,
+   530→          ...data,
+   531→          createdBy: user?.id,
+   532→        }),
+   533→      });
+   534→      
+   535→      if (response.ok) {
+   536→        const result = await response.json();
+   537→        addNotification({
+   538→          title: t.payroll.payrollUpdated,
+   539→          body: `${t.payroll.payrollForMonth} ${selectedPayrollMonth}`,
+   540→
+   541→          type: 'payroll',
+   542→        });
+   543→      }
+   544→    } catch (error) {
+   545→      console.error('Error saving payroll:', error);
+   546→    }
+   547→  };
+   548→
+   549→  const handleSendAnnouncement = async () => {
+   550→    if (!announcementForm.title || !announcementForm.message || !user?.organizationId) return;
+   551→    
+   552→    try {
+   553→      await fetch('/api/announcements', {
+   554→        method: 'POST',
+   555→        headers: { 'Content-Type': 'application/json' },
+   556→        body: JSON.stringify({
+   557→          ...announcementForm,
+   558→          organizationId: user.organizationId,
+   559→        }),
+   560→      });
+   561→      addNotification({
+   562→        title: t.announcement.announcementSent,
+   563→        body: `"${announcementForm.title}" ${t.announcement.announcementSentDesc}`,
+   564→        type: 'announcement',
+   565→      });
+   566→    } catch {
+   567→      addNotification({
+   568→        title: t.announcement.announcementSent,
+   569→        body: `"${announcementForm.title}" ${t.announcement.announcementSentDesc}`,
+   570→        type: 'announcement',
+   571→      });
+   572→    }
+   573→    setShowAnnouncement(false);
+   574→    setAnnouncementForm({ title: '', message: '' });
+   575→  };
+   576→
+   577→  // Handle profile photo update
+   578→  const handleProfilePhotoUpdate = (photo: string) => {
+   579→    updateUser({ profilePhoto: photo });
+   580→    addNotification({
+   581→      title: t.settings.changeProfilePhoto,
+   582→      body: t.messages.employeeUpdated,
+   583→      type: 'announcement',
+   584→    });
+   585→  };
+   586→
+   587→  // Handle organization logo update
+   588→  const handleOrgLogoUpdate = (logo: string) => {
+   589→    updateOrganizationLogo(logo);
+   590→    addNotification({
+   591→      title: t.common.success,
+   592→      body: t.messages.employeeUpdated,
+   593→      type: 'announcement',
+   594→    });
+   595→  };
+   596→
+   597→  const stats = [
+   598→    { label: t.dashboard.totalEmployees, value: employees.length.toString(), color: 'text-emerald-500' },
+   599→    { label: t.dashboard.presentToday, value: attendance.filter(a => a.punchIn).length.toString(), color: 'text-blue-500' },
+   600→    { label: t.dashboard.pendingLeaves, value: leaves.length.toString(), color: 'text-orange-500' },
+   601→    { label: t.dashboard.starEmployee, value: employees.find(e => e.starOfMonth)?.name || t.common.none, color: 'text-purple-500' },
+   602→  ];
+   603→
+   604→  const handleMenuClick = (id: string) => {
+   605→    switch (id) {
+   606→      case 'settings': onSettings(); break;
+   607→      case 'employees': setShowEmployeeList(true); setActiveTab(id); break;  // Show employee list
+   608→      case 'attendance': setShowAttendance(true); setActiveTab(id); break;
+   609→      case 'activities': setShowEmployeeActivities(true); setActiveTab(id); break;
+   610→      case 'leaves': setShowLeaves(true); setActiveTab(id); break;
+   611→      case 'salary': setShowSalaryManagement(true); setActiveTab(id); break;
+   612→      case 'incentives': setShowIncentives(true); setActiveTab(id); break;
+   613→      case 'holidays': setShowHolidayManagement(true); setActiveTab(id); break;
+   614→      default: setActiveTab(id);
+   615→    }
+   616→    setSidebarOpen(false);
+   617→  };
+   618→
+   619→  // Handle Pay Salary
+   620→  const handlePaySalary = async () => {
+   621→    if (!selectedEmployee || !salaryForm.month) return;
+   622→    
+   623→    setIsLoading(true);
+   624→    try {
+   625→      const response = await fetch('/api/salary', {
+   626→        method: 'POST',
+   627→        headers: { 'Content-Type': 'application/json' },
+   628→        body: JSON.stringify({
+   629→          employeeId: selectedEmployee.id,
+   630→          ...salaryForm,
+   631→          netSalary: salaryForm.baseSalary + salaryForm.overtime + salaryForm.incentives - salaryForm.deductions,
+   632→        }),
+   633→      });
+   634→      const data = await response.json();
+   635→      if (data.success) {
+   636→        addNotification({
+   637→          title: t.messages.salaryPaidSuccess,
+   638→          body: `${t.salary.salaryPaidSuccess} ${selectedEmployee.name} ${t.salary.forMonth} ${salaryForm.month}`,
+   639→          type: 'announcement',
+   640→        });
+   641→        setShowPaySalary(false);
+   642→        setSelectedEmployee(null);
+   643→        setSalaryForm({ month: '', baseSalary: 0, overtime: 0, incentives: 0, deductions: 0 });
+   644→      }
+   645→    } catch (error) {
+   646→      console.error('Error paying salary:', error);
+   647→    }
+   648→    setIsLoading(false);
+   649→  };
+   650→
+   651→  // Handle Delete Employee
+   652→  const handleDeleteEmployee = async (id: string) => {
+   653→    if (!confirm(t.employee.confirmDeleteEmployee)) return;
+   654→    
+   655→    try {
+   656→      const response = await fetch(`/api/employees?id=${id}`, {
+   657→        method: 'DELETE',
+   658→      });
+   659→      const data = await response.json();
+   660→      if (data.success) {
+   661→        setEmployees(employees.filter(e => e.id !== id));
+   662→        addNotification({
+   663→          title: t.messages.employeeDeleted,
+   664→          body: t.employee.employeeDeleteSuccess,
+   665→          type: 'announcement',
+   666→        });
+   667→      }
+   668→    } catch (error) {
+   669→      console.error('Error deleting employee:', error);
+   670→    }
+   671→  };
+   672→
+   673→  // Fetch all leaves for tracking
+   674→  const fetchAllLeaves = async () => {
+   675→    if (!user?.organizationId) return;
+   676→    
+   677→    try {
+   678→      const response = await fetch(`/api/leaves?organizationId=${user.organizationId}`);
+   679→      const data = await response.json();
+   680→      if (data.leaves) {
+   681→        setAllLeaves(data.leaves);
+   682→      }
+   683→    } catch (error) {
+   684→      console.error('Error fetching all leaves:', error);
+   685→    }
+   686→  };
+   687→
+   688→  // Open all leaves dialog
+   689→  const handleViewAllLeaves = () => {
+   690→    fetchAllLeaves();
+   691→    setShowAllLeaves(true);
+   692→  };
+   693→
+   694→  // Filter leaves
+   695→  const filteredLeaves = leaveFilter === 'all' 
+   696→    ? allLeaves 
+   697→    : allLeaves.filter(l => l.status === leaveFilter);
+   698→
+   699→  // Handle Add Incentive
+   700→  const handleAddIncentive = async () => {
+   701→    if (!incentiveEmployee || !incentiveForm.amount || !incentiveForm.reason) return;
+   702→    
+   703→    setIsLoading(true);
+   704→    try {
+   705→      const response = await fetch('/api/incentives', {
+   706→        method: 'POST',
+   707→        headers: { 'Content-Type': 'application/json' },
+   708→        body: JSON.stringify({
+   709→          employeeId: incentiveEmployee.id,
+   710→          amount: incentiveForm.amount,
+   711→          reason: incentiveForm.reason,
+   712→          type: incentiveForm.type,
+   713→          month: incentiveForm.month,
+   714→          organizationId: user?.organizationId,
+   715→        }),
+   716→      });
+   717→      const data = await response.json();
+   718→      if (data.success) {
+   719→        addNotification({
+   720→          title: t.incentive.incentiveAdded,
+   721→          body: `₹${incentiveForm.amount.toLocaleString()} ${t.incentive.incentiveAdded} - ${incentiveEmployee.name}`,
+   722→          type: 'announcement',
+   723→        });
+   724→        setShowAddIncentive(false);
+   725→        setIncentiveEmployee(null);
+   726→        setIncentiveForm({ amount: 0, reason: '', type: 'bonus', month: new Date().toISOString().slice(0, 7) });
+   727→        // Refresh incentive records
+   728→        try {
+   729→          const response = await fetch(`/api/incentives?organizationId=${user?.organizationId}`);
+   730→          const data = await response.json();
+   731→          if (data.incentives) {
+   732→            setIncentiveRecords(data.incentives);
+   733→          }
+   734→        } catch (e) {
+   735→          console.error('Error refreshing incentives:', e);
+   736→        }
+   737→      }
+   738→    } catch (error) {
+   739→      console.error('Error adding incentive:', error);
+   740→    }
+   741→    setIsLoading(false);
+   742→  };
+   743→
+   744→  // Open incentives dialog and fetch records
+   745→  useEffect(() => {
+   746→    if (showIncentives && user?.organizationId) {
+   747→      // Define async function inside effect
+   748→      const loadIncentives = async () => {
+   749→        try {
+   750→          const response = await fetch(`/api/incentives?organizationId=${user.organizationId}`);
+   751→          const data = await response.json();
+   752→          if (data.incentives) {
+   753→            setIncentiveRecords(data.incentives);
+   754→          }
+   755→        } catch (error) {
+   756→          console.error('Error fetching incentives:', error);
+   757→        }
+   758→      };
+   759→      loadIncentives();
+   760→    }
+   761→  }, [showIncentives, user?.organizationId]);
+   762→
+   763→  return (
+   764→    <div className="min-h-[100dvh] flex flex-col bg-background">
+   765→      {/* Header */}
+   766→      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-sm">
+   767→        <div className="flex items-center justify-between px-4 py-3">
+   768→          <div className="flex items-center gap-3">
+   769→            <Button variant="ghost" size="icon" className="md:hidden min-h-11 min-w-11" onClick={() => setSidebarOpen(true)}>
+   770→              <Menu className="h-5 w-5" />
+   771→            </Button>
+   772→            <div className="flex items-center gap-2">
+   773→              <button 
+   774→                onClick={() => setShowOrgLogoPicker(true)}
+   775→                className="relative group focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-lg"
+   776→              >
+   777→                {user?.organizationLogo ? (
+   778→                  <img 
+   779→                    src={user.organizationLogo} 
+   780→                    alt={user.organizationName || 'Organization'} 
+   781→                    className="w-8 h-8 rounded-lg object-cover"
+   782→                  />
+   783→                ) : (
+   784→                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center">
+   785→                    <span className="text-sm font-bold text-white">{user?.organizationName?.charAt(0) || 'HB'}</span>
+   786→                  </div>
+   787→                )}
+   788→                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+   789→                  <Camera className="h-3 w-3 text-white" />
+   790→                </div>
+   791→              </button>
+   792→              <span className="font-bold text-lg hidden sm:inline">{user?.organizationName || 'HB Sallery Box'}</span>
+   793→            </div>
+   794→          </div>
+   795→          <div className="flex items-center gap-2">
+   796→            <ThemeToggle />
+   797→            <LanguageToggle />
+   798→            <Button variant="ghost" size="icon" className="relative" onClick={() => setShowNotifications(true)}>
+   799→              <Bell className="h-5 w-5" />
+   800→              {unreadCount > 0 && (
+   801→                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+   802→                  {unreadCount}
+   803→                </span>
+   804→              )}
+   805→            </Button>
+   806→            <button 
+   807→              onClick={() => setShowProfilePhotoPicker(true)}
+   808→              className="focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-full"
+   809→            >
+   810→              <Avatar className="h-8 w-8">
+   811→                <AvatarImage src={user?.profilePhoto} alt={user?.name || 'Admin'} />
+   812→                <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white text-sm">
+   813→                  {user?.name?.charAt(0) || 'A'}
+   814→                </AvatarFallback>
+   815→              </Avatar>
+   816→            </button>
+   817→          </div>
+   818→        </div>
+   819→      </header>
+   820→
+   821→      {/* Mobile Sidebar */}
+   822→      <AnimatePresence>
+   823→        {sidebarOpen && (
+   824→          <>
+   825→            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+   826→              className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setSidebarOpen(false)} />
+   827→            <motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
+   828→              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+   829→              className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r z-50 md:hidden pt-[env(safe-area-inset-top)]">
+   830→              <div className="p-4 border-b flex items-center justify-between">
+   831→                <div className="flex items-center gap-2">
+   832→                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
+   833→                    <img 
+   834→                      src="/logo.jpg" 
+   835→                      alt="HB Sallery Box Logo" 
+   836→                      className="w-full h-full object-cover"
+   837→                    />
+   838→                  </div>
+   839→                  <span className="font-bold">{t.dashboard.adminPanel}</span>
+   840→                </div>
+   841→                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+   842→                  <X className="h-5 w-5" />
+   843→                </Button>
+   844→              </div>
+   845→              <nav className="p-4 space-y-1">
+   846→                {menuItems.map((item) => (
+   847→                  <button key={item.id} onClick={() => handleMenuClick(item.id)}
+   848→                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+   849→                      activeTab === item.id ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted'
+   850→                    }`}>
+   851→                    <item.icon className="h-5 w-5" />
+   852→                    <span>{item.label}</span>
+   853→                  </button>
+   854→                ))}
+   855→                <div className="pt-4 mt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))]">
+   856→                  <button onClick={onLogout}
+   857→                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors">
+   858→                    <LogOut className="h-5 w-5" />
+   859→                    <span>{t.common.logout}</span>
+   860→                  </button>
+   861→                </div>
+   862→              </nav>
+   863→            </motion.aside>
+   864→          </>
+   865→        )}
+   866→      </AnimatePresence>
+   867→
+   868→      {/* Main Content */}
+   869→      <div className="flex-1 flex">
+   870→        {/* Desktop Sidebar */}
+   871→        <aside className="hidden md:flex w-64 flex-col border-r bg-muted/30">
+   872→          <nav className="flex-1 p-4 space-y-1">
+   873→            {menuItems.map((item) => (
+   874→              <button key={item.id} onClick={() => handleMenuClick(item.id)}
+   875→                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+   876→                  activeTab === item.id ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted'
+   877→                }`}>
+   878→                <item.icon className="h-5 w-5" />
+   879→                <span>{item.label}</span>
+   880→              </button>
+   881→            ))}
+   882→          </nav>
+   883→          <div className="p-4 border-t">
+   884→            <button 
+   885→              onClick={() => setShowProfilePhotoPicker(true)}
+   886→              className="w-full flex items-center gap-3 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+   887→            >
+   888→              <Avatar className="h-10 w-10">
+   889→                <AvatarImage src={user?.profilePhoto} alt={user?.name || 'Admin'} />
+   890→                <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+   891→                  {user?.name?.charAt(0) || 'A'}
+   892→                </AvatarFallback>
+   893→              </Avatar>
+   894→              <div className="flex-1 min-w-0 text-left">
+   895→                <p className="text-sm font-medium truncate">{user?.name}</p>
+   896→                <Badge variant="secondary" className="text-xs px-2 py-0 h-5">{t.auth.admin}</Badge>
+   897→              </div>
+   898→              <Camera className="h-4 w-4 text-muted-foreground" />
+   899→            </button>
+   900→            <Button variant="ghost" onClick={onLogout}
+   901→              className="w-full mt-2 text-red-500 hover:bg-red-500/10 hover:text-red-500">
+   902→              <LogOut className="h-4 w-4 mr-2" />
+   903→              {t.common.logout}
+   904→            </Button>
+   905→          </div>
+   906→        </aside>
+   907→
+   908→        {/* Content Area */}
+   909→        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+   910→          <div className="max-w-6xl mx-auto space-y-6">
+   911→            {/* Welcome Section */}
+   912→            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+   913→              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   914→              <div>
+   915→                <h1 className="text-2xl font-bold">{t.dashboard.welcomeAdmin}, {user?.name?.split(' ')[0] || 'Admin'}!</h1>
+   916→                <p className="text-muted-foreground">{user?.organizationName || t.dashboard.organizationDashboard}</p>
+   917→              </div>
+   918→              <div className="flex gap-2">
+   919→                <Button onClick={() => setShowAddEmployee(true)}
+   920→                  className="bg-gradient-to-r from-emerald-500 to-teal-600">
+   921→                  <UserPlus className="h-4 w-4 mr-2" />
+   922→                  {t.dashboard.addEmployee}
+   923→                </Button>
+   924→              </div>
+   925→            </motion.div>
+   926→
+   927→            {/* Stats Cards */}
+   928→            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+   929→              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+   930→                {stats.map((stat, index) => (
+   931→                  <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+   932→                    transition={{ delay: 0.1 + index * 0.05 }}>
+   933→                    <Card className="border-0 shadow-md">
+   934→                      <CardContent className="p-4">
+   935→                        <p className="text-sm text-muted-foreground">{stat.label}</p>
+   936→                        <p className={`text-2xl font-bold mt-1 ${stat.color}`}>{stat.value}</p>
+   937→                      </CardContent>
+   938→                    </Card>
+   939→                  </motion.div>
+   940→                ))}
+   941→              </div>
+   942→            </motion.div>
+   943→
+   944→            {/* Quick Actions */}
+   945→            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+   946→              <Card className="border-0 shadow-md">
+   947→                <CardHeader className="pb-3">
+   948→                  <CardTitle className="text-lg">{t.dashboard.quickActions}</CardTitle>
+   949→                </CardHeader>
+   950→                <CardContent>
+   951→                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+   952→                    {[
+   953→                      { label: t.dashboard.viewAttendance, icon: Clock, action: () => setShowAttendance(true) },
+   954→                      { label: t.dashboard.employeeActivities, icon: Activity, action: () => setShowEmployeeActivities(true) },
+   955→                      { label: t.leave.leaveRequests, icon: Calendar, action: () => setShowLeaves(true), badge: leaves.length },
+   956→                      { label: t.dashboard.manageShifts, icon: Clock, action: () => setShowShiftManagement(true) },
+   957→                      { label: t.salary.salaryManagement, icon: DollarSign, action: () => setShowSalaryManagement(true) },
+   958→                      { label: t.incentive.giveIncentive, icon: Gift, action: () => setShowIncentives(true) },
+   959→                      { label: t.dashboard.holidays, icon: PartyPopper, action: () => setShowHolidayManagement(true) },
+   960→                      { label: t.announcement.sendAnnouncement, icon: MessageSquare, action: () => setShowAnnouncement(true) },
+   961→                    ].map((action) => (
+   962→                      <button key={action.label} onClick={action.action}
+   963→                        className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted/50 hover:bg-muted active:scale-95 transition-all relative touch-manipulation min-h-[80px]">
+   964→                        <action.icon className="h-6 w-6 text-emerald-500" />
+   965→                        <span className="text-sm font-medium text-center">{action.label}</span>
+   966→                        {action.badge && action.badge > 0 && (
+   967→                          <span className="absolute top-2 right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+   968→                            {action.badge}
+   969→                          </span>
+   970→                        )}
+   971→                      </button>
+   972→                    ))}
+   973→                  </div>
+   974→                </CardContent>
+   975→              </Card>
+   976→            </motion.div>
+   977→
+   978→          </div>
+   979→        </main>
+   980→      </div>
+   981→
+   982→      {/* Mobile Bottom Navigation */}
+   983→      <nav className="md:hidden sticky bottom-0 border-t bg-background/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]">
+   984→        <div className="flex justify-around py-2">
+   985→          {menuItems.slice(0, 4).map((item) => (
+   986→            <button key={item.id} onClick={() => handleMenuClick(item.id)}
+   987→              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors min-h-[52px] ${
+   988→                activeTab === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+   989→              }`}>
+   990→              <item.icon className="h-5 w-5" />
+   991→              <span className="text-xs">{item.label}</span>
+   992→            </button>
+   993→          ))}
+   994→          <button onClick={() => setSidebarOpen(true)}
+   995→            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground min-h-[52px]">
+   996→            <Menu className="h-5 w-5" />
+   997→            <span className="text-xs">{t.dashboard.more}</span>
+   998→          </button>
+   999→        </div>
+  1000→      </nav>
+  1001→
+  1002→      {/* Add/Edit Employee Dialog */}
+  1003→      <Dialog open={showAddEmployee || !!editingEmployee} onOpenChange={(open) => {
+  1004→        if (!open) { 
+  1005→          setShowAddEmployee(false); 
+  1006→          setEditingEmployee(null); 
+  1007→          setEmployeeForm({ 
+  1008→            name: '', phone: '', email: '', address: '', designation: '', department: '', salary: 0, 
+  1009→            userId: '', password: '', securityPassword: '',
+  1010→            aadharNumber: '', panNumber: '', accountNumber: '', ifscCode: '', upiId: ''
+  1011→          }); 
+  1012→        }
+  1013→      }}>
+  1014→        <DialogContent className="max-w-lg max-h-[90dvh]">
+  1015→          <DialogHeader><DialogTitle>{editingEmployee ? t.employee.editEmployee : t.employee.addNewEmployee}</DialogTitle></DialogHeader>
+  1016→          <ScrollArea className="max-h-[70dvh]">
+  1017→          <div className="space-y-4 pr-4">
+  1018→            <div className="space-y-2">
+  1019→              <Label>{t.employee.nameRequired}</Label>
+  1020→              <Input placeholder={t.employee.employeeNamePlaceholder} value={editingEmployee ? editingEmployee.name : employeeForm.name}
+  1021→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, name: e.target.value }) : setEmployeeForm({ ...employeeForm, name: e.target.value })} />
+  1022→            </div>
+  1023→            <div className="space-y-2">
+  1024→              <Label>{t.employee.phoneRequired}</Label>
+  1025→              <Input placeholder={t.employee.phonePlaceholder} value={editingEmployee ? editingEmployee.phone : employeeForm.phone}
+  1026→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, phone: e.target.value }) : setEmployeeForm({ ...employeeForm, phone: e.target.value })} />
+  1027→            </div>
+  1028→            {!editingEmployee && (
+  1029→              <>
+  1030→                <div className="space-y-2">
+  1031→                  <Label>{t.employee.userIdRequired}</Label>
+  1032→                  <div className="relative">
+  1033→                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1034→                    <Input placeholder={t.employee.userIdPlaceholder} value={employeeForm.userId}
+  1035→                      onChange={(e) => setEmployeeForm({ ...employeeForm, userId: e.target.value.toLowerCase().replace(/\s+/g, '') })} className="pl-10" />
+  1036→                  </div>
+  1037→                  <p className="text-xs text-muted-foreground">Minimum 4 characters</p>
+  1038→                </div>
+  1039→                <div className="space-y-2">
+  1040→                  <Label>{t.employee.passwordRequired}</Label>
+  1041→                  <div className="relative">
+  1042→                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1043→                    <Input type="password" placeholder={t.employee.passwordPlaceholder} value={employeeForm.password}
+  1044→                      onChange={(e) => setEmployeeForm({ ...employeeForm, password: e.target.value })} className="pl-10" />
+  1045→                  </div>
+  1046→                  <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
+  1047→                </div>
+  1048→                <div className="space-y-2">
+  1049→                  <Label>{t.employee.securityPasswordRequired}</Label>
+  1050→                  <div className="relative">
+  1051→                    <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1052→                    <Input type="password" placeholder={t.employee.securityPasswordPlaceholder} value={employeeForm.securityPassword}
+  1053→                      onChange={(e) => setEmployeeForm({ ...employeeForm, securityPassword: e.target.value })} className="pl-10" />
+  1054→                  </div>
+  1055→                  <p className="text-xs text-muted-foreground">Remember this - needed for password reset</p>
+  1056→                </div>
+  1057→              </>
+  1058→            )}
+  1059→            <div className="space-y-2">
+  1060→              <Label>{t.employee.email}</Label>
+  1061→              <Input type="email" placeholder={t.employee.emailPlaceholder} value={editingEmployee ? editingEmployee.email || '' : employeeForm.email}
+  1062→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, email: e.target.value }) : setEmployeeForm({ ...employeeForm, email: e.target.value })} />
+  1063→            </div>
+  1064→            <div className="space-y-2">
+  1065→              <Label>{t.employee.address}</Label>
+  1066→              <Input placeholder={t.employee.addressPlaceholder} value={editingEmployee ? editingEmployee.address || '' : employeeForm.address}
+  1067→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, address: e.target.value }) : setEmployeeForm({ ...employeeForm, address: e.target.value })} />
+  1068→            </div>
+  1069→            <div className="grid grid-cols-2 gap-4">
+  1070→              <div className="space-y-2"><Label>{t.employee.designation}</Label><Input placeholder={t.employee.designationPlaceholder} value={editingEmployee ? editingEmployee.designation || '' : employeeForm.designation}
+  1071→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, designation: e.target.value }) : setEmployeeForm({ ...employeeForm, designation: e.target.value })} /></div>
+  1072→              <div className="space-y-2"><Label>{t.employee.department}</Label><Input placeholder={t.employee.departmentPlaceholder} value={editingEmployee ? editingEmployee.department || '' : employeeForm.department}
+  1073→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, department: e.target.value }) : setEmployeeForm({ ...employeeForm, department: e.target.value })} /></div>
+  1074→            </div>
+  1075→            <div className="space-y-2">
+  1076→              <Label>{t.salary.baseSalary}</Label>
+  1077→              <Input type="number" placeholder={t.employee.salaryPlaceholder} value={editingEmployee ? editingEmployee.salary : employeeForm.salary}
+  1078→                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, salary: Number(e.target.value) }) : setEmployeeForm({ ...employeeForm, salary: Number(e.target.value) })} />
+  1079→            </div>
+  1080→            
+  1081→            {/* Bank Details Section */}
+  1082→            <div className="border-t pt-4 mt-4">
+  1083→              <h4 className="font-medium mb-3 flex items-center gap-2">
+  1084→                <FileText className="h-4 w-4" />
+  1085→                {t.employee.bankDetails}
+  1086→              </h4>
+  1087→              <div className="grid grid-cols-2 gap-4">
+  1088→                <div className="space-y-2">
+  1089→                  <Label>{t.employee.aadharNumber}</Label>
+  1090→                  <Input placeholder={t.employee.aadharPlaceholder} maxLength={12} value={editingEmployee ? editingEmployee.aadharNumber || '' : employeeForm.aadharNumber}
+  1091→                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, aadharNumber: e.target.value.replace(/\D/g, '') }) : setEmployeeForm({ ...employeeForm, aadharNumber: e.target.value.replace(/\D/g, '') })} />
+  1092→                </div>
+  1093→                <div className="space-y-2">
+  1094→                  <Label>{t.employee.panNumber}</Label>
+  1095→                  <Input placeholder={t.employee.panPlaceholder} maxLength={10} value={editingEmployee ? editingEmployee.panNumber || '' : employeeForm.panNumber}
+  1096→                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, panNumber: e.target.value.toUpperCase() }) : setEmployeeForm({ ...employeeForm, panNumber: e.target.value.toUpperCase() })} />
+  1097→                </div>
+  1098→              </div>
+  1099→              <div className="grid grid-cols-2 gap-4 mt-3">
+  1100→                <div className="space-y-2">
+  1101→                  <Label>{t.employee.accountNumber}</Label>
+  1102→                  <Input placeholder={t.employee.accountPlaceholder} value={editingEmployee ? editingEmployee.accountNumber || '' : employeeForm.accountNumber}
+  1103→                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, accountNumber: e.target.value }) : setEmployeeForm({ ...employeeForm, accountNumber: e.target.value })} />
+  1104→                </div>
+  1105→                <div className="space-y-2">
+  1106→                  <Label>{t.employee.ifscCode}</Label>
+  1107→                  <Input placeholder={t.employee.ifscPlaceholder} value={editingEmployee ? editingEmployee.ifscCode || '' : employeeForm.ifscCode}
+  1108→                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, ifscCode: e.target.value.toUpperCase() }) : setEmployeeForm({ ...employeeForm, ifscCode: e.target.value.toUpperCase() })} />
+  1109→                </div>
+  1110→              </div>
+  1111→              <div className="space-y-2 mt-3">
+  1112→                <Label>{t.employee.upiId}</Label>
+  1113→                <Input placeholder={t.employee.upiPlaceholder} value={editingEmployee ? editingEmployee.upiId || '' : employeeForm.upiId}
+  1114→                  onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, upiId: e.target.value }) : setEmployeeForm({ ...employeeForm, upiId: e.target.value })} />
+  1115→              </div>
+  1116→            </div>
+  1117→            
+  1118→            {editingEmployee && (
+  1119→              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+  1120→                <div className="flex items-center gap-2"><Fingerprint className="h-4 w-4" /><span className="text-sm">{t.settings.biometricLock}</span></div>
+  1121→                <button onClick={() => handleToggleBiometric(editingEmployee.id)}
+  1122→                  className={`w-12 h-6 rounded-full transition-colors ${editingEmployee.biometricEnabled ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}>
+  1123→                  <div className={`w-5 h-5 bg-white rounded-full transition-transform ${editingEmployee.biometricEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+  1124→                </button>
+  1125→              </div>
+  1126→            )}
+  1127→            <div className="flex gap-2">
+  1128→              <Button variant="outline" className="flex-1" onClick={() => { setShowAddEmployee(false); setEditingEmployee(null); }}>{t.common.cancel}</Button>
+  1129→              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={() => {
+  1130→                if (editingEmployee) { setEmployees(employees.map(e => e.id === editingEmployee.id ? editingEmployee : e)); setEditingEmployee(null); }
+  1131→                else { handleAddEmployee(); }
+  1132→              }} disabled={isLoading}>{editingEmployee ? t.common.save : t.dashboard.addEmployee}</Button>
+  1133→            </div>
+  1134→          </div>
+  1135→          </ScrollArea>
+  1136→        </DialogContent>
+  1137→      </Dialog>
+  1138→
+  1139→      {/* Employee List Dialog */}
+  1140→      <Dialog open={showEmployeeList} onOpenChange={setShowEmployeeList}>
+  1141→        <DialogContent className="max-w-4xl max-h-[90dvh] w-[95vw] sm:w-full p-0 gap-0">
+  1142→          <DialogHeader className="p-4 border-b sticky top-0 bg-background z-10">
+  1143→            <DialogTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+  1144→              <span>{t.dashboard.employees} ({employees.length})</span>
+  1145→              <Button size="sm" className="bg-gradient-to-r from-emerald-500 to-teal-600 w-full sm:w-auto" onClick={() => { setShowEmployeeList(false); setShowAddEmployee(true); }}>
+  1146→                <UserPlus className="h-4 w-4 mr-2" /> {t.dashboard.addEmployee}
+  1147→              </Button>
+  1148→            </DialogTitle>
+  1149→          </DialogHeader>
+  1150→          <ScrollArea className="max-h-[70dvh] sm:max-h-[75dvh]">
+  1151→            <div className="p-4">
+  1152→              {employees.length === 0 ? (
+  1153→                <div className="text-center py-8 text-muted-foreground">
+  1154→                  <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
+  1155→                  <p className="text-lg font-medium">{t.employee.noEmployees}</p>
+  1156→                  <p className="text-sm">{t.employee.addFirstEmployee}</p>
+  1157→                </div>
+  1158→              ) : (
+  1159→                <div className="space-y-3">
+  1160→                  {employees.map((emp) => (
+  1161→                    <div key={emp.id} className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 border rounded-xl hover:bg-muted/30 transition-colors">
+  1162→                      {/* Mobile: Top row with avatar and info */}
+  1163→                      <div className="flex items-center gap-3 flex-1 min-w-0">
+  1164→                        <Avatar className="h-12 w-12 flex-shrink-0">
+  1165→                          <AvatarImage src={emp.profilePhoto} />
+  1166→                          <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white text-lg">
+  1167→                            {emp.name.charAt(0)}
+  1168→                          </AvatarFallback>
+  1169→                        </Avatar>
+  1170→                        <div className="flex-1 min-w-0">
+  1171→                          <div className="flex items-center gap-2 flex-wrap">
+  1172→                            <p className="font-medium truncate">{emp.name}</p>
+  1173→                            {emp.starOfMonth && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
+  1174→                            <Badge variant={emp.active ? 'default' : 'secondary'} className="text-xs">{emp.active ? t.employee.active : t.employee.inactive}</Badge>
+  1175→                          </div>
+  1176→                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+  1177→                            <span className="truncate">{emp.designation}</span>
+  1178→                            <span className="hidden sm:inline">•</span>
+  1179→                            <span className="hidden sm:inline truncate">{emp.department}</span>
+  1180→                            <span className="hidden sm:inline">•</span>
+  1181→                            <span className="font-medium text-emerald-600 dark:text-emerald-400">₹{emp.salary?.toLocaleString() || 0}</span>
+  1182→                          </div>
+  1183→                          <div className="flex flex-wrap gap-2 mt-1 text-xs text-muted-foreground">
+  1184→                            <span>{emp.phone}</span>
+  1185→                            {emp.email && <><span className="hidden sm:inline">•</span><span className="hidden sm:inline truncate">{emp.email}</span></>}
+  1186→                          </div>
+  1187→                        </div>
+  1188→                      </div>
+  1189→                      
+  1190→                      {/* Mobile: Bottom row with actions */}
+  1191→                      <div className="flex items-center justify-end gap-2 sm:gap-2 pt-2 sm:pt-0 border-t sm:border-t-0">
+  1192→                        <Button size="sm" variant="outline" className="flex-1 sm:flex-none h-9" onClick={() => {
+  1193→                          setSelectedEmployee(emp);
+  1194→                          setSalaryForm({ 
+  1195→                            month: new Date().toISOString().slice(0, 7), 
+  1196→                            baseSalary: emp.salary, 
+  1197→                            overtime: 0, 
+  1198→                            incentives: 0, 
+  1199→                            deductions: 0 
+  1200→                          });
+  1201→                          setShowPaySalary(true);
+  1202→                        }}>
+  1203→                          <DollarSign className="h-4 w-4 sm:mr-1" /> <span className="sm:inline">{t.employee.paySalary}</span>
+  1204→                        </Button>
+  1205→                        <Button size="sm" variant="outline" className="h-9 w-9 sm:w-auto" onClick={() => {
+  1206→                          setEditingEmployee(emp);
+  1207→                          setShowEmployeeList(false);
+  1208→                          setShowAddEmployee(true);
+  1209→                        }}>
+  1210→                          <Edit className="h-4 w-4" />
+  1211→                        </Button>
+  1212→                        <Button size="sm" variant="destructive" className="h-9 w-9 sm:w-auto" onClick={() => handleDeleteEmployee(emp.id)}>
+  1213→                          <Trash2 className="h-4 w-4" />
+  1214→                        </Button>
+  1215→                      </div>
+  1216→                    </div>
+  1217→                  ))}
+  1218→                </div>
+  1219→              )}
+  1220→            </div>
+  1221→          </ScrollArea>
+  1222→        </DialogContent>
+  1223→      </Dialog>
+  1224→
+  1225→      {/* Pay Salary Dialog */}
+  1226→      <Dialog open={showPaySalary} onOpenChange={setShowPaySalary}>
+  1227→        <DialogContent className="max-w-md">
+  1228→          <DialogHeader><DialogTitle>{t.employee.paySalary}</DialogTitle></DialogHeader>
+  1229→          {selectedEmployee && (
+  1230→            <div className="space-y-4">
+  1231→              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+  1232→                <Avatar className="h-10 w-10">
+  1233→                  <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1234→                    {selectedEmployee.name.charAt(0)}
+  1235→                  </AvatarFallback>
+  1236→                </Avatar>
+  1237→                <div>
+  1238→                  <p className="font-medium">{selectedEmployee.name}</p>
+  1239→                  <p className="text-sm text-muted-foreground">{selectedEmployee.designation} • {selectedEmployee.department}</p>
+  1240→                </div>
+  1241→              </div>
+  1242→              
+  1243→              {/* Bank Details */}
+  1244→              {(selectedEmployee.accountNumber || selectedEmployee.upiId) && (
+  1245→                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
+  1246→                  <p className="font-medium text-blue-700 dark:text-blue-400 mb-1">Payment Details</p>
+  1247→                  {selectedEmployee.accountNumber && (
+  1248→                    <p><span className="text-muted-foreground">Account:</span> ****{selectedEmployee.accountNumber.slice(-4)}</p>
+  1249→                  )}
+  1250→                  {selectedEmployee.ifscCode && (
+  1251→                    <p><span className="text-muted-foreground">IFSC:</span> {selectedEmployee.ifscCode}</p>
+  1252→                  )}
+  1253→                  {selectedEmployee.upiId && (
+  1254→                    <p><span className="text-muted-foreground">UPI:</span> {selectedEmployee.upiId}</p>
+  1255→                  )}
+  1256→                </div>
+  1257→              )}
+  1258→              
+  1259→              <div className="space-y-2">
+  1260→                <Label>{t.salary.month}</Label>
+  1261→                <Input type="month" value={salaryForm.month} onChange={(e) => setSalaryForm({ ...salaryForm, month: e.target.value })} />
+  1262→              </div>
+  1263→              <div className="grid grid-cols-2 gap-4">
+  1264→                <div className="space-y-2">
+  1265→                  <Label>{t.salary.baseSalary}</Label>
+  1266→                  <Input type="number" value={salaryForm.baseSalary} onChange={(e) => setSalaryForm({ ...salaryForm, baseSalary: Number(e.target.value) })} />
+  1267→                </div>
+  1268→                <div className="space-y-2">
+  1269→                  <Label>{t.salary.overtime}</Label>
+  1270→                  <Input type="number" value={salaryForm.overtime} onChange={(e) => setSalaryForm({ ...salaryForm, overtime: Number(e.target.value) })} />
+  1271→                </div>
+  1272→              </div>
+  1273→              <div className="grid grid-cols-2 gap-4">
+  1274→                <div className="space-y-2">
+  1275→                  <Label>{t.salary.incentives}</Label>
+  1276→                  <Input type="number" value={salaryForm.incentives} onChange={(e) => setSalaryForm({ ...salaryForm, incentives: Number(e.target.value) })} />
+  1277→                </div>
+  1278→                <div className="space-y-2">
+  1279→                  <Label>{t.salary.deductions}</Label>
+  1280→                  <Input type="number" value={salaryForm.deductions} onChange={(e) => setSalaryForm({ ...salaryForm, deductions: Number(e.target.value) })} />
+  1281→                </div>
+  1282→              </div>
+  1283→              <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+  1284→                <div className="flex justify-between items-center">
+  1285→                  <span className="font-medium">{t.salary.netSalary}</span>
+  1286→                  <span className="text-2xl font-bold text-emerald-600">
+  1287→                    ₹{(salaryForm.baseSalary + salaryForm.overtime + salaryForm.incentives - salaryForm.deductions).toLocaleString()}
+  1288→                  </span>
+  1289→                </div>
+  1290→              </div>
+  1291→              <div className="flex gap-2">
+  1292→                <Button variant="outline" className="flex-1" onClick={() => { setShowPaySalary(false); setSelectedEmployee(null); }}>{t.common.cancel}</Button>
+  1293→                <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handlePaySalary} disabled={isLoading}>
+  1294→                  {isLoading ? '...' : t.employee.paySalary}
+  1295→                </Button>
+  1296→              </div>
+  1297→            </div>
+  1298→          )}
+  1299→        </DialogContent>
+  1300→      </Dialog>
+  1301→
+  1302→      {/* Attendance Dialog */}
+  1303→      <Dialog open={showAttendance} onOpenChange={setShowAttendance}>
+  1304→        <DialogContent className="max-w-2xl max-h-[80dvh]">
+  1305→          <DialogHeader><DialogTitle>{t.dashboard.todayAttendance}</DialogTitle></DialogHeader>
+  1306→          <ScrollArea className="max-h-80">
+  1307→            <div className="space-y-2">
+  1308→              {attendance.map((record) => (
+  1309→                <div key={record.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+  1310→                  <Avatar className="h-10 w-10">
+  1311→                    <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1312→                      {record.employee.name.charAt(0)}
+  1313→                    </AvatarFallback>
+  1314→                  </Avatar>
+  1315→                  <div className="flex-1">
+  1316→                    <p className="font-medium">{record.employee.name}</p>
+  1317→                    <p className="text-sm text-muted-foreground">{record.employee.designation}</p>
+  1318→                  </div>
+  1319→                  <div className="text-right">
+  1320→                    <div className="flex items-center gap-1">
+  1321→                      <Badge variant={record.punchIn ? 'default' : 'destructive'}>{record.punchIn || 'Not punched in'}</Badge>
+  1322→                      {record.punchOut && <Badge variant="secondary">{record.punchOut}</Badge>}
+  1323→                    </div>
+  1324→                    {record.workHours > 0 && <p className="text-xs text-muted-foreground mt-1">{record.workHours}h worked</p>}
+  1325→                  </div>
+  1326→                </div>
+  1327→              ))}
+  1328→            </div>
+  1329→          </ScrollArea>
+  1330→        </DialogContent>
+  1331→      </Dialog>
+  1332→
+  1333→      {/* Leave Requests Dialog */}
+  1334→      <Dialog open={showLeaves} onOpenChange={setShowLeaves}>
+  1335→        <DialogContent className="max-w-md max-h-[80dvh]">
+  1336→          <DialogHeader>
+  1337→            <DialogTitle className="flex items-center justify-between">
+  1338→              <span>{t.leave.pendingApproval}</span>
+  1339→              <Button size="sm" variant="outline" onClick={handleViewAllLeaves}>
+  1340→                <Eye className="h-4 w-4 mr-1" /> {t.common.viewAll}
+  1341→              </Button>
+  1342→            </DialogTitle>
+  1343→          </DialogHeader>
+  1344→          <ScrollArea className="max-h-80">
+  1345→            <div className="space-y-3">
+  1346→              {leaves.length === 0 ? (
+  1347→                <div className="text-center py-8 text-muted-foreground"><Calendar className="h-8 w-8 mx-auto mb-2" /><p>{t.leave.noLeaveRecords}</p></div>
+  1348→              ) : (
+  1349→                leaves.map((leave) => (
+  1350→                  <div key={leave.id} className="p-3 border rounded-lg">
+  1351→                    <div className="flex items-center justify-between mb-2">
+  1352→                      <p className="font-medium">{leave.employee.name}</p>
+  1353→                      <Badge>{leave.type}</Badge>
+  1354→                    </div>
+  1355→                    <p className="text-sm text-muted-foreground">{leave.startDate} - {leave.endDate}</p>
+  1356→                    {leave.reason && <p className="text-sm mt-1">{leave.reason}</p>}
+  1357→                    <div className="flex gap-2 mt-3">
+  1358→                      <Button size="sm" variant="outline" className="flex-1 border-red-300 text-red-600 hover:bg-red-50" onClick={() => handleRejectLeave(leave)}>
+  1359→                        <XCircle className="h-4 w-4 mr-1" /> {t.leave.reject}
+  1360→                      </Button>
+  1361→                      <Button size="sm" className="flex-1 bg-emerald-500 hover:bg-emerald-600" onClick={() => handleOpenApproveDialog(leave)}>
+  1362→                        <Check className="h-4 w-4 mr-1" /> {t.leave.approve}
+  1363→                      </Button>
+  1364→                    </div>
+  1365→                  </div>
+  1366→                ))
+  1367→              )}
+  1368→            </div>
+  1369→          </ScrollArea>
+  1370→        </DialogContent>
+  1371→      </Dialog>
+  1372→
+  1373→      {/* Leave Approve Dialog - Attendance Allow/Not Allow */}
+  1374→      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+  1375→        <DialogContent className="max-w-sm w-[95vw]">
+  1376→          <DialogHeader>
+  1377→            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+  1378→              <ShieldCheck className="h-5 w-5 text-emerald-500" />
+  1379→              {t.leave.approveLeave}
+  1380→            </DialogTitle>
+  1381→            <DialogDescription className="text-xs">
+  1382→              {approvingLeave?.employee?.name} — {approvingLeave?.type} leave ({approvingLeave?.startDate} to {approvingLeave?.endDate})
+  1383→            </DialogDescription>
+  1384→          </DialogHeader>
+  1385→          
+  1386→          <div className="space-y-4 py-2">
+  1387→            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+  1388→              <p className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+  1389→                <AlertCircle className="h-3.5 w-3.5" />
+  1390→                {t.leave.chooseAttendanceOption}
+  1391→              </p>
+  1392→            </div>
+  1393→            
+  1394→            {approvingLeave?.reason && (
+  1395→              <div className="bg-muted/50 rounded-lg p-3">
+  1396→                <p className="text-xs text-muted-foreground"><span className="font-medium">Reason:</span> {approvingLeave.reason}</p>
+  1397→              </div>
+  1398→            )}
+  1399→
+  1400→            <div className="grid grid-cols-2 gap-3">
+  1401→              <button
+  1402→                onClick={() => handleConfirmApprove(true)}
+  1403→                className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 transition-all active:scale-95 cursor-pointer"
+  1404→              >
+  1405→                <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center">
+  1406→                  <ShieldCheck className="h-6 w-6 text-white" />
+  1407→                </div>
+  1408→                <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{t.leave.attendanceAllow}</span>
+  1409→                <span className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70">{t.leave.employeeCanPunch}</span>
+  1410→              </button>
+  1411→
+  1412→              <button
+  1413→                onClick={() => handleConfirmApprove(false)}
+  1414→                className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-950/40 transition-all active:scale-95 cursor-pointer"
+  1415→              >
+  1416→                <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+  1417→                  <ShieldX className="h-6 w-6 text-white" />
+  1418→                </div>
+  1419→                <span className="text-sm font-semibold text-red-700 dark:text-red-300">{t.leave.attendanceNotAllow}</span>
+  1420→                <span className="text-[10px] text-red-600/70 dark:text-red-400/70">{t.leave.employeeCannotPunch}</span>
+  1421→              </button>
+  1422→            </div>
+  1423→
+  1424→            <Button variant="outline" className="w-full" onClick={() => { setShowApproveDialog(false); setApprovingLeave(null); }}>
+  1425→              {t.common.cancel}
+  1426→            </Button>
+  1427→          </div>
+  1428→        </DialogContent>
+  1429→      </Dialog>
+  1430→
+  1431→      {/* All Leaves Tracking Dialog */}
+  1432→      <Dialog open={showAllLeaves} onOpenChange={setShowAllLeaves}>
+  1433→        <DialogContent className="max-w-3xl max-h-[90dvh]">
+  1434→          <DialogHeader>
+  1435→            <DialogTitle className="flex items-center gap-2">
+  1436→              <Calendar className="h-5 w-5 text-emerald-500" />
+  1437→              {t.leave.leaveTracking}
+  1438→            </DialogTitle>
+  1439→          </DialogHeader>
+  1440→          
+  1441→          {/* Filter Buttons */}
+  1442→          <div className="flex gap-2 flex-wrap">
+  1443→            {['all', 'pending', 'approved', 'rejected'].map((filter) => (
+  1444→              <Button
+  1445→                key={filter}
+  1446→                size="sm"
+  1447→                variant={leaveFilter === filter ? 'default' : 'outline'}
+  1448→                className={leaveFilter === filter ? 'bg-emerald-500' : ''}
+  1449→                onClick={() => setLeaveFilter(filter as typeof leaveFilter)}
+  1450→              >
+  1451→                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+  1452→                {filter === 'all' && ` (${allLeaves.length})`}
+  1453→                {filter === 'pending' && ` (${allLeaves.filter(l => l.status === 'pending').length})`}
+  1454→                {filter === 'approved' && ` (${allLeaves.filter(l => l.status === 'approved').length})`}
+  1455→                {filter === 'rejected' && ` (${allLeaves.filter(l => l.status === 'rejected').length})`}
+  1456→              </Button>
+  1457→            ))}
+  1458→          </div>
+  1459→
+  1460→          <ScrollArea className="max-h-[60dvh]">
+  1461→            <div className="space-y-3">
+  1462→              {filteredLeaves.length === 0 ? (
+  1463→                <div className="text-center py-8 text-muted-foreground">
+  1464→                  <Calendar className="h-12 w-12 mx-auto mb-3 opacity-50" />
+  1465→                  <p>{t.leave.noLeaveRecords}</p>
+  1466→                </div>
+  1467→              ) : (
+  1468→                filteredLeaves.map((leave) => (
+  1469→                  <div key={leave.id} className="p-4 border rounded-xl bg-muted/30">
+  1470→                    <div className="flex items-center justify-between mb-2">
+  1471→                      <div className="flex items-center gap-3">
+  1472→                        <Avatar className="h-10 w-10">
+  1473→                          <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1474→                            {leave.employee?.name?.charAt(0) || 'E'}
+  1475→                          </AvatarFallback>
+  1476→                        </Avatar>
+  1477→                        <div>
+  1478→                          <p className="font-medium">{leave.employee?.name || 'Unknown'}</p>
+  1479→                          <p className="text-sm text-muted-foreground">{leave.employee?.designation || ''}</p>
+  1480→                        </div>
+  1481→                      </div>
+  1482→                      <div className="flex items-center gap-2">
+  1483→                        <Badge variant="outline">{leave.type}</Badge>
+  1484→                        <Badge 
+  1485→                          variant={
+  1486→                            leave.status === 'approved' ? 'default' : 
+  1487→                            leave.status === 'rejected' ? 'destructive' : 'secondary'
+  1488→                          }
+  1489→                          className={
+  1490→                            leave.status === 'approved' ? 'bg-emerald-500' : 
+  1491→                            leave.status === 'rejected' ? 'bg-red-500' : ''
+  1492→                          }
+  1493→                        >
+  1494→                          {leave.status === 'approved' ? `✓ ${t.leave.approved}` : 
+  1495→                           leave.status === 'rejected' ? `✗ ${t.leave.rejected}` : `⏳ ${t.leave.pending}`}
+  1496→                        </Badge>
+  1497→                      </div>
+  1498→                    </div>
+  1499→                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+  1500→                      <span>📅 {leave.startDate} - {leave.endDate}</span>
+  1501→                    </div>
+  1502→                    {leave.reason && (
+  1503→                      <p className="text-sm mt-2 bg-background p-2 rounded">
+  1504→                        <span className="font-medium">{t.leave.reason}:</span> {leave.reason}
+  1505→                      </p>
+  1506→                    )}
+  1507→                    {leave.status === 'pending' && (
+  1508→                      <div className="flex gap-2 mt-3">
+  1509→                        <Button size="sm" variant="outline" className="flex-1 border-red-300 text-red-600 hover:bg-red-50" onClick={() => { handleRejectLeave(leave); }}>
+  1510→                          <XCircle className="h-4 w-4 mr-1" /> {t.leave.reject}
+  1511→                        </Button>
+  1512→                        <Button size="sm" className="flex-1 bg-emerald-500 hover:bg-emerald-600" onClick={() => { handleOpenApproveDialog(leave); }}>
+  1513→                          <Check className="h-4 w-4 mr-1" /> {t.leave.approve}
+  1514→                        </Button>
+  1515→                      </div>
+  1516→                    )}
+  1517→                  </div>
+  1518→                ))
+  1519→              )}
+  1520→            </div>
+  1521→          </ScrollArea>
+  1522→        </DialogContent>
+  1523→      </Dialog>
+  1524→
+  1525→      {/* Shift Management Dialog */}
+  1526→      <Dialog open={showShiftManagement} onOpenChange={setShowShiftManagement}>
+  1527→        <DialogContent className="max-w-3xl max-h-[90dvh]">
+  1528→          <DialogHeader><DialogTitle>{t.shift.shiftManagement}</DialogTitle></DialogHeader>
+  1529→          <ScrollArea className="max-h-[70dvh]">
+  1530→            <ShiftManagement organizationId={user?.organizationId || ''} />
+  1531→          </ScrollArea>
+  1532→        </DialogContent>
+  1533→      </Dialog>
+  1534→
+  1535→      {/* Employee Activities Dialog */}
+  1536→      <Dialog open={showEmployeeActivities} onOpenChange={setShowEmployeeActivities}>
+  1537→        <DialogContent className="max-w-4xl max-h-[90dvh]">
+  1538→          <DialogHeader>
+  1539→            <DialogTitle className="flex items-center gap-2">
+  1540→              <Activity className="h-5 w-5 text-emerald-500" />
+  1541→              {t.dashboard.employeeActivities}
+  1542→            </DialogTitle>
+  1543→          </DialogHeader>
+  1544→          <ScrollArea className="max-h-[75dvh]">
+  1545→            <EmployeeActivities organizationId={user?.organizationId || ''} />
+  1546→          </ScrollArea>
+  1547→        </DialogContent>
+  1548→      </Dialog>
+  1549→
+  1550→      {/* Salary Management Dialog */}
+  1551→      <Dialog open={showSalaryManagement} onOpenChange={setShowSalaryManagement}>
+  1552→        <DialogContent className="max-w-4xl max-h-[90dvh]">
+  1553→          <DialogHeader><DialogTitle>{t.salary.salaryManagement}</DialogTitle></DialogHeader>
+  1554→          <ScrollArea className="max-h-[70dvh]">
+  1555→            <div className="space-y-4">
+  1556→              <Card className="border-0 shadow-md">
+  1557→                <CardHeader className="pb-2"><CardTitle className="text-base">{t.salary.salaryFormula}</CardTitle></CardHeader>
+  1558→                <CardContent>
+  1559→                  <div className="bg-muted p-4 rounded-lg font-mono text-sm">
+  1560→                    <p><span className="text-emerald-500">{t.salary.baseSalary}</span></p>
+  1561→                    <p><span className="text-blue-500">+ {t.salary.overtime}</span></p>
+  1562→                    <p><span className="text-purple-500">+ {t.salary.incentives}</span></p>
+  1563→                    <p className="border-t pt-2 mt-2"><span className="font-bold">= {t.salary.finalSalary}</span></p>
+  1564→                  </div>
+  1565→                </CardContent>
+  1566→              </Card>
+  1567→              <div className="space-y-2">
+  1568→                {employees.map((emp) => (
+  1569→                  <div key={emp.id} className="flex items-center gap-3 p-3 border rounded-lg">
+  1570→                    <Avatar className="h-10 w-10">
+  1571→                      <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1572→                        {emp.name.charAt(0)}
+  1573→                      </AvatarFallback>
+  1574→                    </Avatar>
+  1575→                    <div className="flex-1">
+  1576→                      <p className="font-medium">{emp.name}</p>
+  1577→                      <p className="text-sm text-muted-foreground">{emp.designation}</p>
+  1578→                    </div>
+  1579→                    <div className="text-right">
+  1580→                      <p className="font-bold text-emerald-500">₹{emp.salary.toLocaleString()}</p>
+  1581→                      <p className="text-xs text-muted-foreground">{t.salary.baseSalary}</p>
+  1582→                    </div>
+  1583→                  </div>
+  1584→                ))}
+  1585→              </div>
+  1586→            </div>
+  1587→          </ScrollArea>
+  1588→        </DialogContent>
+  1589→      </Dialog>
+  1590→
+  1591→      {/* Announcement Dialog */}
+  1592→      <Dialog open={showAnnouncement} onOpenChange={setShowAnnouncement}>
+  1593→        <DialogContent className="max-w-md">
+  1594→          <DialogHeader><DialogTitle>{t.announcement.sendAnnouncement}</DialogTitle></DialogHeader>
+  1595→          <div className="space-y-4">
+  1596→            <div className="space-y-2">
+  1597→              <Label>{t.announcement.announcementTitle}</Label>
+  1598→              <Input placeholder={t.announcement.announcementTitle} value={announcementForm.title}
+  1599→                onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })} />
+  1600→            </div>
+  1601→            <div className="space-y-2">
+  1602→              <Label>{t.announcement.announcementMessage}</Label>
+  1603→              <Textarea placeholder="Enter your message..." rows={4} value={announcementForm.message}
+  1604→                onChange={(e) => setAnnouncementForm({ ...announcementForm, message: e.target.value })} />
+  1605→            </div>
+  1606→            <div className="flex gap-2">
+  1607→              <Button variant="outline" className="flex-1" onClick={() => setShowAnnouncement(false)}>{t.common.cancel}</Button>
+  1608→              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handleSendAnnouncement}>
+  1609→                <Send className="h-4 w-4 mr-2" /> Send
+  1610→              </Button>
+  1611→            </div>
+  1612→          </div>
+  1613→        </DialogContent>
+  1614→      </Dialog>
+  1615→
+  1616→      {/* Notifications Dialog */}
+  1617→      <Dialog open={showNotifications} onOpenChange={setShowNotifications}>
+  1618→        <DialogContent className="max-w-md max-h-[80dvh]">
+  1619→          <DialogHeader>
+  1620→            <div className="flex items-center justify-between">
+  1621→              <DialogTitle>{t.notifications.notifications}</DialogTitle>
+  1622→              {unreadCount > 0 && <Button variant="ghost" size="sm" onClick={markAllAsRead}>{t.notifications.markAllRead}</Button>}
+  1623→            </div>
+  1624→          </DialogHeader>
+  1625→          <ScrollArea className="max-h-80">
+  1626→            <div className="space-y-2">
+  1627→              {notifications.length === 0 ? (
+  1628→                <div className="text-center py-8 text-muted-foreground"><Bell className="h-8 w-8 mx-auto mb-2" /><p>{t.notifications.noNotifications}</p></div>
+  1629→              ) : (
+  1630→                notifications.map((notification) => (
+  1631→                  <div key={notification.id} onClick={() => markAsRead(notification.id)}
+  1632→                    className={`p-3 rounded-lg cursor-pointer transition-colors ${notification.read ? 'bg-muted/30' : 'bg-muted hover:bg-muted/80'}`}>
+  1633→                    <div className="flex items-start gap-3">
+  1634→                      <div className={`w-2 h-2 rounded-full mt-2 ${notification.read ? 'bg-transparent' : 'bg-emerald-500'}`} />
+  1635→                      <div className="flex-1">
+  1636→                        <p className="font-medium text-sm">{notification.title}</p>
+  1637→                        <p className="text-xs text-muted-foreground mt-1">{notification.body}</p>
+  1638→                        <p className="text-xs text-muted-foreground mt-1">{new Date(notification.createdAt).toLocaleString()}</p>
+  1639→                      </div>
+  1640→                    </div>
+  1641→                  </div>
+  1642→                ))
+  1643→              )}
+  1644→            </div>
+  1645→          </ScrollArea>
+  1646→        </DialogContent>
+  1647→      </Dialog>
+  1648→
+  1649→      {/* Profile Photo Picker */}
+  1650→      <PhotoPicker
+  1651→        open={showProfilePhotoPicker}
+  1652→        onClose={() => setShowProfilePhotoPicker(false)}
+  1653→        onConfirm={handleProfilePhotoUpdate}
+  1654→        title={t.settings.changeProfilePhoto}
+  1655→        currentPhoto={user?.profilePhoto}
+  1656→        aspectRatio="circle"
+  1657→        allowGallery={true}
+  1658→      />
+  1659→
+  1660→      {/* Organization Logo Picker */}
+  1661→      <PhotoPicker
+  1662→        open={showOrgLogoPicker}
+  1663→        onClose={() => setShowOrgLogoPicker(false)}
+  1664→        onConfirm={handleOrgLogoUpdate}
+  1665→        title="Organization Logo"
+  1666→        currentPhoto={user?.organizationLogo}
+  1667→        aspectRatio="square"
+  1668→        allowGallery={true}
+  1669→      />
+  1670→
+  1671→      {/* Holiday Management Dialog */}
+  1672→      <Dialog open={showHolidayManagement} onOpenChange={setShowHolidayManagement}>
+  1673→        <DialogContent className="max-w-5xl max-h-[90dvh]">
+  1674→          <DialogHeader>
+  1675→            <DialogTitle className="flex items-center gap-2">
+  1676→              <PartyPopper className="h-5 w-5 text-emerald-500" />
+  1677→              {t.holiday.holidayManagement}
+  1678→            </DialogTitle>
+  1679→          </DialogHeader>
+  1680→          <ScrollArea className="max-h-[80dvh]">
+  1681→            <HolidayManagement 
+  1682→              organizationId={user?.organizationId || ''} 
+  1683→              adminId={user?.id || ''} 
+  1684→            />
+  1685→          </ScrollArea>
+  1686→        </DialogContent>
+  1687→      </Dialog>
+  1688→
+  1689→      {/* Incentives Management Dialog */}
+  1690→      <Dialog open={showIncentives} onOpenChange={setShowIncentives}>
+  1691→        <DialogContent className="max-w-4xl max-h-[90dvh]">
+  1692→          <DialogHeader>
+  1693→            <DialogTitle className="flex items-center justify-between">
+  1694→              <span className="flex items-center gap-2">
+  1695→                <Gift className="h-5 w-5 text-emerald-500" />
+  1696→                {t.incentive.giveIncentive}
+  1697→              </span>
+  1698→              <Button size="sm" className="bg-gradient-to-r from-emerald-500 to-teal-600" onClick={() => setShowAddIncentive(true)}>
+  1699→                <Gift className="h-4 w-4 mr-2" /> {t.incentive.giveIncentive}
+  1700→              </Button>
+  1701→            </DialogTitle>
+  1702→          </DialogHeader>
+  1703→          <ScrollArea className="max-h-[70dvh]">
+  1704→            <div className="space-y-4">
+  1705→              {/* Incentive Summary */}
+  1706→              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1707→                <Card className="border-0 shadow-md">
+  1708→                  <CardContent className="p-4 text-center">
+  1709→                    <p className="text-2xl font-bold text-emerald-500">₹{incentiveRecords.reduce((sum, i) => sum + i.amount, 0).toLocaleString()}</p>
+  1710→                    <p className="text-xs text-muted-foreground">Total Given</p>
+  1711→                  </CardContent>
+  1712→                </Card>
+  1713→                <Card className="border-0 shadow-md">
+  1714→                  <CardContent className="p-4 text-center">
+  1715→                    <p className="text-2xl font-bold text-blue-500">{incentiveRecords.length}</p>
+  1716→                    <p className="text-xs text-muted-foreground">Total Records</p>
+  1717→                  </CardContent>
+  1718→                </Card>
+  1719→                <Card className="border-0 shadow-md">
+  1720→                  <CardContent className="p-4 text-center">
+  1721→                    <p className="text-2xl font-bold text-purple-500">{incentiveRecords.filter(i => i.month === new Date().toISOString().slice(0, 7)).length}</p>
+  1722→                    <p className="text-xs text-muted-foreground">This Month</p>
+  1723→                  </CardContent>
+  1724→                </Card>
+  1725→                <Card className="border-0 shadow-md">
+  1726→                  <CardContent className="p-4 text-center">
+  1727→                    <p className="text-2xl font-bold text-orange-500">{new Set(incentiveRecords.map(i => i.employeeId)).size}</p>
+  1728→                    <p className="text-xs text-muted-foreground">Employees</p>
+  1729→                  </CardContent>
+  1730→                </Card>
+  1731→              </div>
+  1732→
+  1733→              {/* Incentive Records List */}
+  1734→              {incentiveRecords.length === 0 ? (
+  1735→                <div className="text-center py-8 text-muted-foreground">
+  1736→                  <Gift className="h-12 w-12 mx-auto mb-3 opacity-50" />
+  1737→                  <p className="text-lg font-medium">{t.incentive.noIncentives}</p>
+  1738→                  <p className="text-sm">Give incentives to employees to motivate them!</p>
+  1739→                </div>
+  1740→              ) : (
+  1741→                <div className="space-y-3">
+  1742→                  {incentiveRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((incentive) => (
+  1743→                    <div key={incentive.id} className="flex items-center gap-4 p-4 border rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
+  1744→                      <Avatar className="h-12 w-12">
+  1745→                        <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white text-lg">
+  1746→                          {incentive.employee?.name?.charAt(0) || 'E'}
+  1747→                        </AvatarFallback>
+  1748→                      </Avatar>
+  1749→                      <div className="flex-1 min-w-0">
+  1750→                        <div className="flex items-center gap-2">
+  1751→                          <p className="font-medium">{incentive.employee?.name || 'Unknown'}</p>
+  1752→                          <Badge variant="outline" className="text-xs">{incentive.type}</Badge>
+  1753→                        </div>
+  1754→                        <p className="text-sm text-muted-foreground truncate">{incentive.reason}</p>
+  1755→                        <p className="text-xs text-muted-foreground">{new Date(incentive.date).toLocaleDateString()} {incentive.month && `• ${incentive.month}`}</p>
+  1756→                      </div>
+  1757→                      <div className="text-right">
+  1758→                        <p className="text-xl font-bold text-emerald-500">+₹{incentive.amount.toLocaleString()}</p>
+  1759→                        <p className="text-xs text-muted-foreground">Incentive</p>
+  1760→                      </div>
+  1761→                    </div>
+  1762→                  ))}
+  1763→                </div>
+  1764→              )}
+  1765→            </div>
+  1766→          </ScrollArea>
+  1767→        </DialogContent>
+  1768→      </Dialog>
+  1769→
+  1770→      {/* Add Incentive Dialog */}
+  1771→      <Dialog open={showAddIncentive} onOpenChange={setShowAddIncentive}>
+  1772→        <DialogContent className="max-w-md">
+  1773→          <DialogHeader>
+  1774→            <DialogTitle className="flex items-center gap-2">
+  1775→              <Gift className="h-5 w-5 text-emerald-500" />
+  1776→              {incentiveEmployee ? `${t.incentive.giveIncentive} - ${incentiveEmployee.name}` : t.incentive.selectEmployee}
+  1777→            </DialogTitle>
+  1778→          </DialogHeader>
+  1779→          
+  1780→          {!incentiveEmployee ? (
+  1781→            <ScrollArea className="max-h-[60dvh]">
+  1782→              <div className="space-y-2">
+  1783→                {employees.map((emp) => (
+  1784→                  <button
+  1785→                    key={emp.id}
+  1786→                    onClick={() => setIncentiveEmployee(emp)}
+  1787→                    className="w-full flex items-center gap-3 p-3 border rounded-lg hover:bg-muted transition-colors text-left"
+  1788→                  >
+  1789→                    <Avatar className="h-10 w-10">
+  1790→                      <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1791→                        {emp.name.charAt(0)}
+  1792→                      </AvatarFallback>
+  1793→                    </Avatar>
+  1794→                    <div className="flex-1">
+  1795→                      <p className="font-medium">{emp.name}</p>
+  1796→                      <p className="text-sm text-muted-foreground">{emp.designation || 'Employee'}</p>
+  1797→                    </div>
+  1798→                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+  1799→                  </button>
+  1800→                ))}
+  1801→              </div>
+  1802→            </ScrollArea>
+  1803→          ) : (
+  1804→            <div className="space-y-4">
+  1805→              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+  1806→                <Avatar className="h-10 w-10">
+  1807→                  <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1808→                    {incentiveEmployee.name.charAt(0)}
+  1809→                  </AvatarFallback>
+  1810→                </Avatar>
+  1811→                <div className="flex-1">
+  1812→                  <p className="font-medium">{incentiveEmployee.name}</p>
+  1813→                  <p className="text-sm text-muted-foreground">{incentiveEmployee.designation || 'Employee'}</p>
+  1814→                </div>
+  1815→                <Button variant="ghost" size="sm" onClick={() => setIncentiveEmployee(null)}>{t.common.edit}</Button>
+  1816→              </div>
+  1817→              
+  1818→              <div className="space-y-2">
+  1819→                <Label>{t.incentive.incentiveType}</Label>
+  1820→                <div className="grid grid-cols-2 gap-2">
+  1821→                  {[
+  1822→                    { value: 'bonus', label: '🎉 Bonus' },
+  1823→                    { value: 'performance', label: '⭐ Performance' },
+  1824→                    { value: 'attendance', label: '✅ Attendance' },
+  1825→                    { value: 'referral', label: '👥 Referral' },
+  1826→                    { value: 'overtime', label: '⏰ Overtime' },
+  1827→                    { value: 'achievement', label: '🏆 Achievement' },
+  1828→                    ...customCategories.map(cat => ({ value: cat.toLowerCase(), label: `📁 ${cat}` })),
+  1829→                  ].map((type) => (
+  1830→                    <button
+  1831→                      key={type.value}
+  1832→                      onClick={() => setIncentiveForm({ ...incentiveForm, type: type.value })}
+  1833→                      className={`p-2 border rounded-lg text-sm transition-colors ${
+  1834→                        incentiveForm.type === type.value ? 'bg-emerald-500 text-white border-emerald-500' : 'hover:bg-muted'
+  1835→                      }`}
+  1836→                    >
+  1837→                      {type.label}
+  1838→                    </button>
+  1839→                  ))}
+  1840→                </div>
+  1841→                
+  1842→                {/* Add New Category */}
+  1843→                {!showNewCategoryInput ? (
+  1844→                  <Button 
+  1845→                    variant="outline" 
+  1846→                    size="sm" 
+  1847→                    className="w-full mt-2"
+  1848→                    onClick={() => setShowNewCategoryInput(true)}
+  1849→                  >
+  1850→                    <Star className="h-4 w-4 mr-2" /> {t.incentive.addNewCategory}
+  1851→                  </Button>
+  1852→                ) : (
+  1853→                  <div className="flex gap-2 mt-2">
+  1854→                    <Input
+  1855→                      placeholder="Category name"
+  1856→                      value={newCategoryName}
+  1857→                      onChange={(e) => setNewCategoryName(e.target.value)}
+  1858→                      className="flex-1"
+  1859→                    />
+  1860→                    <Button 
+  1861→                      size="sm"
+  1862→                      variant="outline"
+  1863→                      onClick={() => setShowNewCategoryInput(false)}
+  1864→                    >
+  1865→                      <X className="h-4 w-4" />
+  1866→                    </Button>
+  1867→                    <Button 
+  1868→                      size="sm"
+  1869→                      className="bg-emerald-500"
+  1870→                      onClick={() => {
+  1871→                        if (newCategoryName.trim()) {
+  1872→                          setCustomCategories([...customCategories, newCategoryName.trim()]);
+  1873→                          setIncentiveForm({ ...incentiveForm, type: newCategoryName.trim().toLowerCase() });
+  1874→                          setNewCategoryName('');
+  1875→                          setShowNewCategoryInput(false);
+  1876→                        }
+  1877→                      }}
+  1878→                    >
+  1879→                      <Check className="h-4 w-4" />
+  1880→                    </Button>
+  1881→                  </div>
+  1882→                )}
+  1883→              </div>
+  1884→              
+  1885→              <div className="space-y-2">
+  1886→                <Label>{t.incentive.amount} (₹) *</Label>
+  1887→                <Input
+  1888→                  type="number"
+  1889→                  placeholder="Enter amount"
+  1890→                  value={incentiveForm.amount || ''}
+  1891→                  onChange={(e) => setIncentiveForm({ ...incentiveForm, amount: Number(e.target.value) })}
+  1892→                />
+  1893→              </div>
+  1894→              
+  1895→              <div className="space-y-2">
+  1896→                <Label>{t.salary.month}</Label>
+  1897→                <Input
+  1898→                  type="month"
+  1899→                  value={incentiveForm.month}
+  1900→                  onChange={(e) => setIncentiveForm({ ...incentiveForm, month: e.target.value })}
+  1901→                />
+  1902→              </div>
+  1903→              
+  1904→              <div className="space-y-2">
+  1905→                <Label>{t.incentive.reason} *</Label>
+  1906→                <Textarea
+  1907→                  placeholder="Enter reason for incentive..."
+  1908→                  rows={3}
+  1909→                  value={incentiveForm.reason}
+  1910→                  onChange={(e) => setIncentiveForm({ ...incentiveForm, reason: e.target.value })}
+  1911→                />
+  1912→              </div>
+  1913→              
+  1914→              <div className="flex gap-2">
+  1915→                <Button variant="outline" className="flex-1" onClick={() => { setShowAddIncentive(false); setIncentiveEmployee(null); }}>{t.common.cancel}</Button>
+  1916→                <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handleAddIncentive} disabled={isLoading || !incentiveForm.amount || !incentiveForm.reason}>
+  1917→                  {isLoading ? '...' : t.incentive.giveIncentive}
+  1918→                </Button>
+  1919→              </div>
+  1920→            </div>
+  1921→          )}
+  1922→        </DialogContent>
+  1923→      </Dialog>
+  1924→    </div>
+  1925→  );
+  1926→}
+  1927→

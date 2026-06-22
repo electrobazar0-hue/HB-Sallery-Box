@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useMemo, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  LogOut, User, Calendar, Clock, DollarSign, Bell,
+     7→  FileText, Home, Menu, X, Settings,
+     8→  Camera, MapPin, Check, Fingerprint, Gift, Navigation,
+     9→  Image as ImageIcon, Megaphone, Receipt, Plus, Trash2, XCircle, PartyPopper
+    10→} from 'lucide-react';
+    11→import { Button } from '@/components/ui/button';
+    12→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    13→import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+    14→import { Badge } from '@/components/ui/badge';
+    15→import { ThemeToggle } from '@/components/theme-toggle';
+    16→import { LanguageToggle } from '@/components/language-toggle';
+    17→import { useAuthStore } from '@/store/auth-store';
+    18→import { useLanguageStore } from '@/lib/i18n';
+    19→import {
+    20→  Dialog,
+    21→  DialogContent,
+    22→  DialogHeader,
+    23→  DialogTitle,
+    24→} from '@/components/ui/dialog';
+    25→import { ScrollArea } from '@/components/ui/scroll-area';
+    26→import { Input } from '@/components/ui/input';
+    27→import { Label } from '@/components/ui/label';
+    28→import { Textarea } from '@/components/ui/textarea';
+    29→import { useGPS } from '@/hooks/use-gps';
+    30→import { useNotifications } from '@/hooks/use-notifications';
+    31→import { CameraCapture } from '@/components/camera-capture';
+    32→import { to12HourFormat, dateTo12HourFormat, dateTo12HourFormatWithSeconds, dateTo24HourFormatWithSeconds, formatTimeWithSeconds } from '@/lib/time-utils';
+    33→// import { isWithinGeofence, getGeofenceViolationMessage } from '@/lib/geofence';
+    34→
+    35→interface AttendanceRecord {
+    36→  id: string;
+    37→  date: string;
+    38→  punchIn?: string;
+    39→  punchOut?: string;
+    40→  punchInLat?: number;
+    41→  punchInLng?: number;
+    42→  punchOutLat?: number;
+    43→  punchOutLng?: number;
+    44→  punchInPhoto?: string;
+    45→  punchOutPhoto?: string;
+    46→  workHours: number;
+    47→  overtime: number;
+    48→  status: string;
+    49→}
+    50→
+    51→interface EmployeeDashboardProps {
+    52→  onLogout: () => void;
+    53→  onSettings: () => void;
+    54→}
+    55→
+    56→interface SalaryRecord {
+    57→  id: string;
+    58→  month: string;
+    59→  baseSalary: number;
+    60→  overtime: number;
+    61→  incentives: number;
+    62→  deductions: number;
+    63→  netSalary: number;
+    64→  status: string;
+    65→  paidAt?: string;
+    66→}
+    67→
+    68→interface LeaveRecord {
+    69→  id: string;
+    70→  type: string;
+    71→  startDate: string;
+    72→  endDate: string;
+    73→  reason?: string;
+    74→  status: string;
+    75→  attendanceAllow?: boolean;
+    76→  createdAt: string;
+    77→  approvedAt?: string;
+    78→}
+    79→
+    80→interface HolidayRecord {
+    81→  id: string;
+    82→  holidayName: string;
+    83→  date: string;
+    84→  holidayType: string;
+    85→  description?: string;
+    86→  allowPunch: boolean;
+    87→  isHalfDay: boolean;
+    88→  isPaid: boolean;
+    89→  isOptional: boolean;
+    90→}
+    91→
+    92→interface ExpenseRecord {
+    93→  id: string;
+    94→  title: string;
+    95→  description?: string;
+    96→  category: string;
+    97→  amount: number;
+    98→  currency: string;
+    99→  expenseDate: string;
+   100→  status: string;
+   101→  receiptUrl?: string;
+   102→  createdAt: string;
+   103→  approvedAt?: string;
+   104→  rejectedAt?: string;
+   105→  rejectionReason?: string;
+   106→  paidAt?: string;
+   107→  employee?: {
+   108→    id: string;
+   109→    name: string;
+   110→    designation?: string;
+   111→    department?: string;
+   112→  };
+   113→}
+   114→
+   115→export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardProps) {
+   116→  const { user, updateUser } = useAuthStore();
+   117→  const { t } = useLanguageStore();
+   118→  const [activeTab, setActiveTab] = useState('home');
+   119→  const [sidebarOpen, setSidebarOpen] = useState(false);
+   120→  const [isPunchedIn, setIsPunchedIn] = useState(false);
+   121→  const [currentTime, setCurrentTime] = useState(new Date());
+   122→  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+   123→  const [showSalaryDialog, setShowSalaryDialog] = useState(false);
+   124→  const [showProfileDialog, setShowProfileDialog] = useState(false);
+   125→  const [showNotificationDialog, setShowNotificationDialog] = useState(false);
+   126→  const [showCamera, setShowCamera] = useState(false);
+   127→  const [showPhotoDialog, setShowPhotoDialog] = useState(false);
+   128→  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+   129→  const [pendingPunchType, setPendingPunchType] = useState<'in' | 'out' | null>(null);
+   130→  const [punchTime, setPunchTime] = useState<{ in?: string; out?: string }>({});
+   131→  const [punchInLocation, setPunchInLocation] = useState<{ lat: number; lng: number } | null>(null);
+   132→  const [punchOutLocation, setPunchOutLocation] = useState<{ lat: number; lng: number } | null>(null);
+   133→  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
+   134→  const [salaryHistory, setSalaryHistory] = useState<SalaryRecord[]>([]);
+   135→  const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
+   136→  const [showLeaveHistoryDialog, setShowLeaveHistoryDialog] = useState(false);
+   137→  const [announcements, setAnnouncements] = useState<{ id: string; title: string; message: string; createdAt: string }[]>([]);
+   138→  const [showAnnouncementPopup, setShowAnnouncementPopup] = useState(false);
+   139→  const [currentAnnouncement, setCurrentAnnouncement] = useState<{ title: string; message: string } | null>(null);
+   140→  const [isLoading, setIsLoading] = useState(false);
+   141→  const [incentiveRecords, setIncentiveRecords] = useState<{ id: string; amount: number; reason: string; type: string; month: string; createdAt: string }[]>([]);
+   142→  const [showIncentiveDialog, setShowIncentiveDialog] = useState(false);
+   143→  const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([]);
+   144→  const [showExpenseDialog, setShowExpenseDialog] = useState(false);
+   145→  const [showExpenseHistoryDialog, setShowExpenseHistoryDialog] = useState(false);
+   146→  const [expenseForm, setExpenseForm] = useState({
+   147→    title: '',
+   148→    description: '',
+   149→    category: 'other',
+   150→    amount: '',
+   151→    expenseDate: new Date().toISOString().split('T')[0],
+   152→    receiptUrl: '',
+   153→  });
+   154→  const [holidays, setHolidays] = useState<HolidayRecord[]>([]);
+   155→
+   156→  // GPS tracking
+   157→  const { coordinates, permissionStatus, requestPermission, getCurrentPosition } = useGPS({
+   158→    onSuccess: (coords) => {
+   159→      console.log('GPS coordinates:', coords);
+   160→    },
+   161→  });
+   162→
+   163→  // Notifications
+   164→  const {
+   165→    notifications,
+   166→    unreadCount,
+   167→    permissionStatus: notifPermission,
+   168→    requestPermission: requestNotifPermission,
+   169→    addNotification,
+   170→    markAsRead,
+   171→    markAllAsRead,
+   172→  } = useNotifications({
+   173→    userId: user?.id || '',
+   174→    role: 'employee',
+   175→  });
+   176→
+   177→  // Leave form
+   178→  const [leaveForm, setLeaveForm] = useState({
+   179→    type: 'casual',
+   180→    startDate: '',
+   181→    endDate: '',
+   182→    reason: '',
+   183→  });
+   184→
+   185→  // Profile form
+   186→  const [profileForm, setProfileForm] = useState({
+   187→    name: user?.name || '',
+   188→    email: user?.email || '',
+   189→    address: '',
+   190→  });
+   191→
+   192→  // Update current time every second
+   193→  useEffect(() => {
+   194→    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+   195→    return () => clearInterval(timer);
+   196→  }, []);
+   197→
+   198→  // Request GPS permission on mount
+   199→  useEffect(() => {
+   200→    if (permissionStatus === 'prompt') {
+   201→      requestPermission();
+   202→    }
+   203→  }, [permissionStatus, requestPermission]);
+   204→
+   205→  // Request notification permission
+   206→  useEffect(() => {
+   207→    if (notifPermission === 'default') {
+   208→      requestNotifPermission();
+   209→    }
+   210→  }, [notifPermission, requestNotifPermission]);
+   211→
+   212→  // Fetch attendance history
+   213→  useEffect(() => {
+   214→    if (!user?.id) return;
+   215→
+   216→    let mounted = true;
+   217→
+   218→    const fetchAttendance = async () => {
+   219→      try {
+   220→        const response = await fetch(`/api/attendance?employeeId=${user.id}`);
+   221→        
+   222→        if (!response.ok) {
+   223→          throw new Error('Failed to fetch attendance');
+   224→        }
+   225→        
+   226→        const data = await response.json();
+   227→        
+   228→        if (mounted && data.attendance && data.attendance.length > 0) {
+   229→          setAttendanceHistory(data.attendance);
+   230→          // Check if already punched in today
+   231→          const today = new Date().toISOString().split('T')[0];
+   232→          const todayRecord = data.attendance.find((a: AttendanceRecord) => a.date === today);
+   233→          if (todayRecord && todayRecord.punchIn && !todayRecord.punchOut) {
+   234→            setIsPunchedIn(true);
+   235→            setPunchTime({ in: todayRecord.punchIn.slice(0, 5) });
+   236→            setPunchInLocation({ lat: todayRecord.punchInLat!, lng: todayRecord.punchInLng! });
+   237→          }
+   238→        }
+   239→      } catch (error) {
+   240→        console.error('Error fetching attendance:', error);
+   241→        // Don't set demo data - keep empty for fresh employee
+   242→        if (mounted) {
+   243→          setAttendanceHistory([]);
+   244→        }
+   245→      }
+   246→    };
+   247→
+   248→    fetchAttendance();
+   249→
+   250→    return () => { mounted = false; };
+   251→  }, [user?.id]);
+   252→
+   253→  // Fetch salary history
+   254→  useEffect(() => {
+   255→    if (!user?.id) return;
+   256→
+   257→    let mounted = true;
+   258→
+   259→    const fetchSalaryHistory = async () => {
+   260→      try {
+   261→        const response = await fetch(`/api/salary?employeeId=${user.id}`);
+   262→        
+   263→        if (!response.ok) {
+   264→          throw new Error('Failed to fetch salary history');
+   265→        }
+   266→        
+   267→        const data = await response.json();
+   268→        
+   269→        if (mounted && data.salaries) {
+   270→          setSalaryHistory(data.salaries);
+   271→        }
+   272→      } catch (error) {
+   273→        console.error('Error fetching salary history:', error);
+   274→        if (mounted) {
+   275→          setSalaryHistory([]);
+   276→        }
+   277→      }
+   278→    };
+   279→
+   280→    fetchSalaryHistory();
+   281→
+   282→    return () => { mounted = false; };
+   283→  }, [user?.id]);
+   284→
+   285→  // Fetch leave records
+   286→  useEffect(() => {
+   287→    if (!user?.id) return;
+   288→
+   289→    let mounted = true;
+   290→
+   291→    const fetchLeaveRecords = async () => {
+   292→      try {
+   293→        const response = await fetch(`/api/leaves?employeeId=${user.id}`);
+   294→        
+   295→        if (!response.ok) {
+   296→          throw new Error('Failed to fetch leave records');
+   297→        }
+   298→        
+   299→        const data = await response.json();
+   300→        
+   301→        if (mounted && data.leaves) {
+   302→          setLeaveRecords(data.leaves);
+   303→        }
+   304→      } catch (error) {
+   305→        console.error('Error fetching leave records:', error);
+   306→        if (mounted) {
+   307→          setLeaveRecords([]);
+   308→        }
+   309→      }
+   310→    };
+   311→
+   312→    fetchLeaveRecords();
+   313→
+   314→    return () => { mounted = false; };
+   315→  }, [user?.id]);
+   316→
+   317→  // Fetch incentive records
+   318→  useEffect(() => {
+   319→    if (!user?.id) return;
+   320→
+   321→    let mounted = true;
+   322→
+   323→    const fetchIncentives = async () => {
+   324→      try {
+   325→        const response = await fetch(`/api/incentives?employeeId=${user.id}`);
+   326→        
+   327→        if (!response.ok) {
+   328→          throw new Error('Failed to fetch incentives');
+   329→        }
+   330→        
+   331→        const data = await response.json();
+   332→        
+   333→        if (mounted && data.incentives) {
+   334→          setIncentiveRecords(data.incentives);
+   335→        }
+   336→      } catch (error) {
+   337→        console.error('Error fetching incentives:', error);
+   338→        if (mounted) {
+   339→          setIncentiveRecords([]);
+   340→        }
+   341→      }
+   342→    };
+   343→
+   344→    fetchIncentives();
+   345→
+   346→    return () => { mounted = false; };
+   347→  }, [user?.id]);
+   348→
+   349→  // Fetch expense records
+   350→  useEffect(() => {
+   351→    if (!user?.id) return;
+   352→
+   353→    let mounted = true;
+   354→
+   355→    const fetchExpenses = async () => {
+   356→      try {
+   357→        const response = await fetch(`/api/expenses?employeeId=${user.id}`);
+   358→        
+   359→        if (!response.ok) {
+   360→          throw new Error('Failed to fetch expenses');
+   361→        }
+   362→        
+   363→        const data = await response.json();
+   364→        
+   365→        if (mounted && data.expenses) {
+   366→          setExpenseRecords(data.expenses);
+   367→        }
+   368→      } catch (error) {
+   369→        console.error('Error fetching expenses:', error);
+   370→        if (mounted) {
+   371→          setExpenseRecords([]);
+   372→        }
+   373→      }
+   374→    };
+   375→
+   376→    fetchExpenses();
+   377→
+   378→    return () => { mounted = false; };
+   379→  }, [user?.id]);
+   380→
+   381→  // Fetch announcements and show popup for new ones
+   382→  useEffect(() => {
+   383→    if (!user?.organizationId) return;
+   384→
+   385→    let mounted = true;
+   386→
+   387→    const fetchAnnouncements = async () => {
+   388→      try {
+   389→        const response = await fetch(`/api/announcements?organizationId=${user.organizationId}`);
+   390→        
+   391→        if (!response.ok) {
+   392→          throw new Error('Failed to fetch announcements');
+   393→        }
+   394→        
+   395→        const data = await response.json();
+   396→        
+   397→        if (mounted && data.announcements && data.announcements.length > 0) {
+   398→          setAnnouncements(data.announcements);
+   399→          
+   400→          // Check for new announcements (not seen in this session)
+   401→          const lastSeenKey = `lastAnnouncement_${user.organizationId}`;
+   402→          const lastSeenId = sessionStorage.getItem(lastSeenKey);
+   403→          
+   404→          // Get the latest announcement
+   405→          const latestAnnouncement = data.announcements[0];
+   406→          
+   407→          // If it's a new announcement, show popup
+   408→          if (latestAnnouncement && latestAnnouncement.id !== lastSeenId) {
+   409→            setCurrentAnnouncement({
+   410→              title: latestAnnouncement.title,
+   411→              message: latestAnnouncement.message
+   412→            });
+   413→            setShowAnnouncementPopup(true);
+   414→            
+   415→            // Add to notifications
+   416→            addNotification({
+   417→              title: '📢 ' + latestAnnouncement.title,
+   418→              body: latestAnnouncement.message,
+   419→              type: 'announcement',
+   420→            });
+   421→            
+   422→            // Mark as seen
+   423→            sessionStorage.setItem(lastSeenKey, latestAnnouncement.id);
+   424→          }
+   425→        }
+   426→      } catch (error) {
+   427→        console.error('Error fetching announcements:', error);
+   428→      }
+   429→    };
+   430→
+   431→    fetchAnnouncements();
+   432→    
+   433→    // Poll for new announcements every 30 seconds
+   434→    const interval = setInterval(fetchAnnouncements, 30000);
+   435→
+   436→    return () => { 
+   437→      mounted = false;
+   438→      clearInterval(interval);
+   439→    };
+   440→  }, [user?.organizationId, user?.id, addNotification]);
+   441→
+   442→  // Calculate leaves left (12 total - approved leaves count)
+   443→  const TOTAL_LEAVES = 12;
+   444→  const approvedLeavesCount = leaveRecords.filter(l => l.status === 'approved').length;
+   445→  const leavesLeft = TOTAL_LEAVES - approvedLeavesCount;
+   446→
+   447→  // Check if today is an approved leave day
+   448→  const checkIfTodayIsApprovedLeave = (): { isLeave: boolean; leaveRecord: LeaveRecord | null } => {
+   449→    const today = new Date().toISOString().split('T')[0];
+   450→    const approvedLeave = leaveRecords.find(leave => {
+   451→      if (leave.status !== 'approved') return false;
+   452→      const start = new Date(leave.startDate);
+   453→      const end = new Date(leave.endDate);
+   454→      const todayDate = new Date(today);
+   455→      return todayDate >= start && todayDate <= end;
+   456→    });
+   457→    return { isLeave: !!approvedLeave, leaveRecord: approvedLeave || null };
+   458→  };
+   459→
+   460→  const { isLeave: isTodayApprovedLeave, leaveRecord: todayLeaveRecord } = checkIfTodayIsApprovedLeave();
+   461→
+   462→  const menuItems = [
+   463→    { id: 'home', label: t.dashboard.home, icon: Home },
+   464→    { id: 'holidays', label: t.dashboard.holidays, icon: PartyPopper },
+   465→    { id: 'attendance', label: t.dashboard.attendance, icon: Clock },
+   466→    { id: 'leaves', label: t.leave.applyLeave, icon: Calendar },
+   467→    { id: 'expenses', label: t.dashboard.expenses, icon: Receipt },
+   468→    { id: 'salary', label: t.dashboard.salary, icon: DollarSign },
+   469→    { id: 'incentives', label: t.dashboard.incentives, icon: Gift },
+   470→    { id: 'settings', label: t.common.settings, icon: Settings },
+   471→  ];
+   472→
+   473→  // Map leave type to translation key
+   474→  const getLeaveTypeLabel = (type: string) => {
+   475→    const typeMap: Record<string, string> = {
+   476→      casual: t.leave.casual,
+   477→      sick: t.leave.sick,
+   478→      earned: t.leave.earned,
+   479→      unpaid: t.leave.unpaid,
+   480→    };
+   481→    return typeMap[type] || type;
+   482→  };
+   483→
+   484→  // Map attendance status to translation
+   485→  const getStatusLabel = (status: string) => {
+   486→    const statusMap: Record<string, string> = {
+   487→      present: t.attendance.present,
+   488→      absent: t.attendance.absent,
+   489→      late: t.attendance.late,
+   490→    };
+   491→    return statusMap[status] || status;
+   492→  };
+   493→
+   494→  // Map expense status to translation
+   495→  const getExpenseStatusLabel = (status: string) => {
+   496→    const statusMap: Record<string, string> = {
+   497→      pending: t.leave.pending,
+   498→      approved: t.leave.approved,
+   499→      paid: t.salary.paid,
+   500→      rejected: t.leave.rejected,
+   501→    };
+   502→    return statusMap[status] || status;
+   503→  };
+   504→
+   505→  // Handle punch with GPS and photo
+   506→  const handlePunch = async (type: 'in' | 'out') => {
+   507→    console.log('handlePunch called with type:', type);
+   508→
+   509→    // Check if today is an approved leave day
+   510→    if (isTodayApprovedLeave) {
+   511→      console.log('Cannot punch - on approved leave');
+   512→      addNotification({
+   513→        title: t.leave.cannotPunchOnLeave,
+   514→        body: t.dashboard.onApprovedLeave,
+   515→        type: 'leave',
+   516→      });
+   517→      return;
+   518→    }
+   519→
+   520→    // Check GPS permission
+   521→    if (permissionStatus !== 'granted') {
+   522→      console.log('GPS permission not granted, requesting...');
+   523→      const granted = await requestPermission();
+   524→      if (!granted) {
+   525→        console.error('GPS permission denied');
+   526→        alert(t.attendance.gpsPermissionRequired);
+   527→        return;
+   528→      }
+   529→    }
+   530→
+   531→    console.log('Opening camera for punch:', type);
+   532→    // Set pending punch type and show camera
+   533→    setPendingPunchType(type);
+   534→    setShowCamera(true);
+   535→  };
+   536→
+   537→  // Complete punch after photo capture with accurate GPS location and LOCAL time
+   538→  const completePunch = async (photo: string) => {
+   539→    if (!pendingPunchType) {
+   540→      console.error('No pending punch type');
+   541→      return;
+   542→    }
+   543→
+   544→    console.log('Starting punch:', pendingPunchType);
+   545→    setShowCamera(false);
+   546→    setIsLoading(true);
+   547→
+   548→    try {
+   549→      // Get current GPS position with high accuracy
+   550→      console.log('Getting GPS position...');
+   551→      const coords = await getCurrentPosition();
+   552→      console.log('GPS coords received:', coords);
+   553→
+   554→      // Use LOCAL time from device (not GPS timestamp which is UTC)
+   555→      const now = new Date(); // Device's local time
+   556→      const date = now.toISOString().split('T')[0];
+   557→
+   558→      // Format times using device's LOCAL time
+   559→      const time = dateTo12HourFormat(now); // 12-hour format for display (e.g., "10:39 AM")
+   560→      const accurateTime = dateTo12HourFormatWithSeconds(now); // With seconds (e.g., "10:39:45 AM")
+   561→      const fullTime = dateTo24HourFormatWithSeconds(now); // 24-hour format for database (e.g., "10:39:45")
+   562→
+   563→      console.log('Time formatted:', { time, accurateTime, fullTime });
+   564→
+   565→      // Validate required data
+   566→      if (!user?.id) {
+   567→        throw new Error('User ID not found. Please log in again.');
+   568→      }
+   569→
+   570→      if (!coords || !coords.latitude || !coords.longitude) {
+   571→        throw new Error('GPS coordinates not available. Please try again.');
+   572→      }
+   573→
+   574→      // Check geofence if enabled for this employee
+   575→      /*if (user?.geofenceEnabled && user.geofenceLat && user.geofenceLng) {
+   576→        console.log('Geofence is enabled, checking location...');
+   577→        const isWithin = isWithinGeofence(
+   578→          { lat: coords.latitude, lng: coords.longitude },
+   579→          { lat: user.geofenceLat, lng: user.geofenceLng, radius: user.geofenceRadius || 100 }
+   580→        );
+   581→
+   582→        if (!isWithin) {
+   583→          const violationMessage = getGeofenceViolationMessage(
+   584→            { lat: coords.latitude, lng: coords.longitude },
+   585→            { lat: user.geofenceLat, lng: user.geofenceLng, radius: user.geofenceRadius || 100 }
+   586→          );
+   587→          console.log('Geofence violation:', violationMessage);
+   588→          throw new Error(violationMessage || 'You are outside the allowed attendance area.');
+   589→        }
+   590→        console.log('User is within geofence, allowing punch.');
+   591→      }*/
+   592→
+   593→      // Send to API with LOCAL timestamp and pre-formatted local times
+   594→      const payload = {
+   595→        employeeId: user.id,
+   596→        type: pendingPunchType,
+   597→        latitude: coords.latitude,
+   598→        longitude: coords.longitude,
+   599→        photo,
+   600→        timestamp: now.getTime(), // Device's local timestamp
+   601→        localTime: fullTime, // Local time as string (HH:MM:SS) - matches user's timezone
+   602→        accuracy: coords.accuracy, // Location accuracy in meters
+   603→      };
+   604→      console.log('Sending to API:', payload);
+   605→
+   606→      const response = await fetch('/api/attendance', {
+   607→        method: 'POST',
+   608→        headers: { 'Content-Type': 'application/json' },
+   609→        body: JSON.stringify(payload),
+   610→      });
+   611→
+   612→      console.log('API response status:', response.status);
+   613→      const data = await response.json();
+   614→      console.log('API response data:', data);
+   615→
+   616→      if (!response.ok) {
+   617→        throw new Error(data.error || 'Failed to punch in/out');
+   618→      }
+   619→
+   620→      // Show accuracy in notification
+   621→      const accuracyInfo = data.accuracy ? ` (±${data.accuracy.toFixed(0)}m accuracy)` : '';
+   622→      const timeInfo = data.accurateTime || accurateTime;
+   623→
+   624→      if (pendingPunchType === 'in') {
+   625→        setPunchTime({ ...punchTime, in: timeInfo });
+   626→        setPunchInLocation({ lat: coords.latitude, lng: coords.longitude });
+   627→        setIsPunchedIn(true);
+   628→
+   629→        // Add notification with error handling
+   630→        try {
+   631→          addNotification({
+   632→            title: t.notifications.punchInSuccess || 'Punched In Successfully',
+   633→            body: `${t.dashboard.punchedInAtTime || 'Punched in at'} ${timeInfo}${accuracyInfo}`,
+   634→            type: 'attendance',
+   635→            priority: 'high',
+   636→          });
+   637→        } catch (notifError) {
+   638→          console.error('Failed to add notification:', notifError);
+   639→        }
+   640→
+   641→        // Update attendance history
+   642→        const newRecord: AttendanceRecord = {
+   643→          id: Date.now().toString(),
+   644→          date,
+   645→          punchIn: fullTime,
+   646→          punchInLat: coords.latitude,
+   647→          punchInLng: coords.longitude,
+   648→          punchInPhoto: photo,
+   649→          workHours: 0,
+   650→          overtime: 0,
+   651→          status: 'present',
+   652→        };
+   653→        setAttendanceHistory(prev => [newRecord, ...prev.filter(a => a.date !== date)]);
+   654→      } else {
+   655→        setPunchTime({ ...punchTime, out: timeInfo });
+   656→        setPunchOutLocation({ lat: coords.latitude, lng: coords.longitude });
+   657→        setIsPunchedIn(false);
+   658→
+   659→        // Add notification with error handling
+   660→        try {
+   661→          addNotification({
+   662→            title: t.notifications.punchOutSuccess || 'Punched Out Successfully',
+   663→            body: `${t.dashboard.punchedOutAtTime || 'Punched out at'} ${timeInfo}${accuracyInfo}`,
+   664→            type: 'attendance',
+   665→            priority: 'normal',
+   666→          });
+   667→        } catch (notifError) {
+   668→          console.error('Failed to add notification:', notifError);
+   669→        }
+   670→
+   671→        // Update today's record in history
+   672→        setAttendanceHistory(prev => prev.map(record => {
+   673→          if (record.date === date) {
+   674→            return {
+   675→              ...record,
+   676→              punchOut: fullTime,
+   677→              punchOutLat: coords.latitude,
+   678→              punchOutLng: coords.longitude,
+   679→              punchOutPhoto: photo,
+   680→              workHours: data.workHours || 9,
+   681→              overtime: data.overtime || 1,
+   682→            };
+   683→          }
+   684→          return record;
+   685→        }));
+   686→      }
+   687→    } catch (error) {
+   688→      console.error('Punch error:', error);
+   689→      const errorMessage = error instanceof Error ? error.message : t.attendance.punchFailedMessage || 'Failed to punch in/out';
+   690→
+   691→      // Try to show error notification
+   692→      try {
+   693→        addNotification({
+   694→          title: t.attendance.punchFailed || 'Punch Failed',
+   695→          body: errorMessage,
+   696→          type: 'error',
+   697→          priority: 'high',
+   698→        });
+   699→      } catch (notifError) {
+   700→        console.error('Failed to add error notification:', notifError);
+   701→        // Fallback to alert
+   702→        alert(errorMessage);
+   703→      }
+   704→    } finally {
+   705→      setIsLoading(false);
+   706→      setPendingPunchType(null);
+   707→    }
+   708→  };
+   709→
+   710→  const handleApplyLeave = async () => {
+   711→    if (!leaveForm.startDate || !leaveForm.endDate) return;
+   712→
+   713→    try {
+   714→      await fetch('/api/leaves', {
+   715→        method: 'POST',
+   716→        headers: { 'Content-Type': 'application/json' },
+   717→        body: JSON.stringify({
+   718→          employeeId: user?.id,
+   719→          ...leaveForm,
+   720→        }),
+   721→      });
+   722→      addNotification({
+   723→        title: t.dashboard.leaveRequestSubmitted,
+   724→        body: t.dashboard.leaveSubmitMessage,
+   725→        type: 'leave',
+   726→      });
+   727→      setShowLeaveDialog(false);
+   728→      setLeaveForm({ type: 'casual', startDate: '', endDate: '', reason: '' });
+   729→    } catch (error) {
+   730→      console.error('Leave error:', error);
+   731→      setShowLeaveDialog(false);
+   732→    }
+   733→  };
+   734→
+   735→  const handleSubmitExpense = async () => {
+   736→    if (!expenseForm.title || !expenseForm.amount || !expenseForm.expenseDate) return;
+   737→
+   738→    setIsLoading(true);
+   739→    try {
+   740→      const response = await fetch('/api/expenses', {
+   741→        method: 'POST',
+   742→        headers: { 'Content-Type': 'application/json' },
+   743→        body: JSON.stringify({
+   744→          employeeId: user?.id,
+   745→          title: expenseForm.title,
+   746→          description: expenseForm.description,
+   747→          category: expenseForm.category,
+   748→          amount: parseFloat(expenseForm.amount),
+   749→          expenseDate: expenseForm.expenseDate,
+   750→          receiptUrl: expenseForm.receiptUrl,
+   751→        }),
+   752→      });
+   753→      
+   754→      if (response.ok) {
+   755→        addNotification({
+   756→          title: t.expense.expenseSubmitted,
+   757→          body: t.dashboard.expenseSubmitMessage,
+   758→          type: 'expense',
+   759→        });
+   760→        setShowExpenseDialog(false);
+   761→        setExpenseForm({
+   762→          title: '',
+   763→          description: '',
+   764→          category: 'other',
+   765→          amount: '',
+   766→          expenseDate: new Date().toISOString().split('T')[0],
+   767→          receiptUrl: '',
+   768→        });
+   769→        // Refresh expense records
+   770→        const data = await response.json();
+   771→        if (data.expense) {
+   772→          setExpenseRecords(prev => [data.expense, ...prev]);
+   773→        }
+   774→      }
+   775→    } catch (error) {
+   776→      console.error('Expense error:', error);
+   777→      addNotification({
+   778→        title: t.common.error,
+   779→        body: t.dashboard.failedSubmitExpense,
+   780→        type: 'error',
+   781→      });
+   782→    }
+   783→    setIsLoading(false);
+   784→  };
+   785→
+   786→  const handleDeleteExpense = async (expenseId: string) => {
+   787→    if (!confirm(t.expense.confirmDeleteExpense)) return;
+   788→
+   789→    try {
+   790→      const response = await fetch(`/api/expenses?id=${expenseId}`, {
+   791→        method: 'DELETE',
+   792→      });
+   793→      
+   794→      if (response.ok) {
+   795→        setExpenseRecords(prev => prev.filter(e => e.id !== expenseId));
+   796→        addNotification({
+   797→          title: t.expense.expenseDeleted,
+   798→          body: t.expense.expenseDeleteSuccess,
+   799→          type: 'expense',
+   800→        });
+   801→      }
+   802→    } catch (error) {
+   803→      console.error('Delete error:', error);
+   804→    }
+   805→  };
+   806→
+   807→  const handleUpdateProfile = () => {
+   808→    updateUser(profileForm);
+   809→    setShowProfileDialog(false);
+   810→  };
+   811→
+   812→  const handleToggleBiometric = () => {
+   813→    updateUser({ biometricEnabled: !user?.biometricEnabled });
+   814→  };
+   815→
+   816→  const handleViewPhoto = (photo: string) => {
+   817→    setSelectedPhoto(photo);
+   818→    setShowPhotoDialog(true);
+   819→  };
+   820→
+   821→  const salaryData = useMemo(() => ({
+   822→    baseSalary: user?.salary || 0,
+   823→    overtime: 0,
+   824→    incentives: incentiveRecords.reduce((sum, i) => sum + i.amount, 0),
+   825→    deductions: 0,
+   826→    netSalary: (user?.salary || 0) + incentiveRecords.reduce((sum, i) => sum + i.amount, 0),
+   827→  }), [user?.salary, incentiveRecords]);
+   828→
+   829→  const handleMenuClick = (id: string) => {
+   830→    if (id === 'settings') {
+   831→      onSettings();
+   832→    } else if (id === 'leaves') {
+   833→      setShowLeaveDialog(true);
+   834→    } else if (id === 'salary') {
+   835→      setShowSalaryDialog(true);
+   836→    } else {
+   837→      setActiveTab(id);
+   838→    }
+   839→    setSidebarOpen(false);
+   840→  };
+   841→
+   842→  // Render attendance tab content
+   843→  const renderAttendanceTab = () => (
+   844→    <div className="space-y-4">
+   845→      <Card className="border-0 shadow-md">
+   846→        <CardHeader>
+   847→          <CardTitle className="flex items-center gap-2">
+   848→            <Clock className="h-5 w-5 text-emerald-500" />
+   849→            {t.attendance.myAttendanceActivities}
+   850→          </CardTitle>
+   851→          <p className="text-sm text-muted-foreground">
+   852→            {t.attendance.allRecordsWithPhotosLocations}
+   853→          </p>
+   854→        </CardHeader>
+   855→        <CardContent>
+   856→          <ScrollArea className="max-h-[60dvh]">
+   857→            <div className="space-y-4">
+   858→              {attendanceHistory.length === 0 ? (
+   859→                <div className="text-center py-8 text-muted-foreground">
+   860→                  <Clock className="h-8 w-8 mx-auto mb-2" />
+   861→                  <p>{t.attendance.noAttendanceRecords}</p>
+   862→                </div>
+   863→              ) : (
+   864→                attendanceHistory.map((record) => (
+   865→                  <motion.div
+   866→                    key={record.id}
+   867→                    initial={{ opacity: 0, y: 10 }}
+   868→                    animate={{ opacity: 1, y: 0 }}
+   869→                    className="p-4 border rounded-xl bg-muted/30 space-y-4"
+   870→                  >
+   871→                    {/* Date and Status */}
+   872→                    <div className="flex items-center justify-between">
+   873→                      <div className="flex items-center gap-3">
+   874→                        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex flex-col items-center justify-center text-white">
+   875→                          <span className="text-xs">
+   876→                            {new Date(record.date).toLocaleDateString('en-US', { month: 'short' })}
+   877→                          </span>
+   878→                          <span className="text-lg font-bold">{new Date(record.date).getDate()}</span>
+   879→                        </div>
+   880→                        <div>
+   881→                          <p className="font-medium">
+   882→                            {new Date(record.date).toLocaleDateString('en-US', { weekday: 'long' })}
+   883→                          </p>
+   884→                          <Badge variant={
+   885→                            record.status === 'present' ? 'default' :
+   886→                            record.status === 'late' ? 'secondary' : 'destructive'
+   887→                          }>
+   888→                            {getStatusLabel(record.status)}
+   889→                          </Badge>
+   890→                        </div>
+   891→                      </div>
+   892→                      {record.workHours > 0 && (
+   893→                        <div className="text-right">
+   894→                          <p className="text-2xl font-bold text-emerald-500">{record.workHours}h</p>
+   895→                          {record.overtime > 0 && (
+   896→                            <p className="text-xs text-orange-500">+{record.overtime}h {t.attendance.otLabel}</p>
+   897→                          )}
+   898→                        </div>
+   899→                      )}
+   900→                    </div>
+   901→
+   902→                    {/* Punch In Details */}
+   903→                    {record.punchIn && (
+   904→                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+   905→                        {/* Punch In */}
+   906→                        <div className="space-y-2">
+   907→                          <div className="flex items-center gap-2 text-emerald-600">
+   908→                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+   909→                            <span className="text-sm font-medium">{t.attendance.punchIn}: {formatTimeWithSeconds(record.punchIn)}</span>
+   910→                            {record.punchIn.includes(':') && record.punchIn.split(':').length > 2 && (
+   911→                              <span className="text-xs text-muted-foreground ml-2">(accurate time)</span>
+   912→                            )}
+   913→                          </div>
+   914→
+   915→                          {/* Punch In Photo */}
+   916→                          {record.punchInPhoto && (
+   917→                            <div className="relative group">
+   918→                              <img
+   919→                                src={record.punchInPhoto}
+   920→                                alt={t.attendance.punchIn}
+   921→                                className="w-full h-32 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+   922→                                onClick={() => handleViewPhoto(record.punchInPhoto!)}
+   923→                              />
+   924→                              <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+   925→                                <ImageIcon className="h-3 w-3" />
+   926→                                {t.attendance.tapToView}
+   927→                              </div>
+   928→                            </div>
+   929→                          )}
+   930→
+   931→                          {/* Punch In Location */}
+   932→                          {record.punchInLat && record.punchInLng && (
+   933→                            <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
+   934→                              <MapPin className="h-4 w-4 text-emerald-500 flex-shrink-0" />
+   935→                              <div className="flex-1 min-w-0">
+   936→                                <p className="text-xs font-medium">{t.attendance.punchInLocation}</p>
+   937→                                <p className="text-xs text-muted-foreground truncate">
+   938→                                  {record.punchInLat.toFixed(6)}, {record.punchInLng.toFixed(6)}
+   939→                                </p>
+   940→                              </div>
+   941→                            </div>
+   942→                          )}
+   943→                        </div>
+   944→
+   945→                        {/* Punch Out */}
+   946→                        {record.punchOut ? (
+   947→                          <div className="space-y-2">
+   948→                            <div className="flex items-center gap-2 text-red-600">
+   949→                              <div className="w-2 h-2 rounded-full bg-red-500" />
+   950→                              <span className="text-sm font-medium">{t.attendance.punchOut}: {formatTimeWithSeconds(record.punchOut)}</span>
+   951→                              {record.punchOut.includes(':') && record.punchOut.split(':').length > 2 && (
+   952→                                <span className="text-xs text-muted-foreground ml-2">(accurate time)</span>
+   953→                              )}
+   954→                            </div>
+   955→
+   956→                            {/* Punch Out Photo */}
+   957→                            {record.punchOutPhoto && (
+   958→                              <div className="relative group">
+   959→                                <img
+   960→                                  src={record.punchOutPhoto}
+   961→                                  alt={t.attendance.punchOut}
+   962→                                  className="w-full h-32 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+   963→                                  onClick={() => handleViewPhoto(record.punchOutPhoto!)}
+   964→                                />
+   965→                                <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+   966→                                  <ImageIcon className="h-3 w-3" />
+   967→                                  {t.attendance.tapToView}
+   968→                                </div>
+   969→                              </div>
+   970→                            )}
+   971→
+   972→                          {/* Punch Out Location */}
+   973→                          {record.punchOutLat && record.punchOutLng && (
+   974→                            <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
+   975→                              <MapPin className="h-4 w-4 text-red-500 flex-shrink-0" />
+   976→                              <div className="flex-1 min-w-0">
+   977→                                <p className="text-xs font-medium">{t.attendance.punchOutLocation}</p>
+   978→                                <p className="text-xs text-muted-foreground truncate">
+   979→                                  {record.punchOutLat.toFixed(6)}, {record.punchOutLng.toFixed(6)}
+   980→                                </p>
+   981→                              </div>
+   982→                            </div>
+   983→                          )}
+   984→                          </div>
+   985→                        ) : (
+   986→                          <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg">
+   987→                            <span className="text-muted-foreground text-sm">{t.attendance.notPunchedOutYet}</span>
+   988→                          </div>
+   989→                        )}
+   990→                      </div>
+   991→                    )}
+   992→
+   993→                    {/* Absent indicator */}
+   994→                    {!record.punchIn && (
+   995→                      <div className="flex items-center justify-center p-4 bg-red-500/10 rounded-lg">
+   996→                        <span className="text-red-500 font-medium">{t.attendance.absentNoRecorded}</span>
+   997→                      </div>
+   998→                    )}
+   999→
+  1000→                    {/* Locked indicator */}
+  1001→                    <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2 border-t">
+  1002→                      <span className="flex items-center gap-1">
+  1003→                        <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+  1004→                          <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+  1005→                        </svg>
+  1006→                        {t.attendance.recordLocked}
+  1007→                      </span>
+  1008→                    </div>
+  1009→                  </motion.div>
+  1010→                ))
+  1011→              )}
+  1012→            </div>
+  1013→          </ScrollArea>
+  1014→        </CardContent>
+  1015→      </Card>
+  1016→    </div>
+  1017→  );
+  1018→
+  1019→  // Render expenses tab content
+  1020→  const renderExpensesTab = () => (
+  1021→    <div className="space-y-4">
+  1022→      <Card className="border-0 shadow-md">
+  1023→        <CardHeader>
+  1024→          <div className="flex items-center justify-between">
+  1025→            <div>
+  1026→              <CardTitle className="flex items-center gap-2">
+  1027→                <Receipt className="h-5 w-5 text-blue-500" />
+  1028→                {t.expense.myExpenseClaims}
+  1029→              </CardTitle>
+  1030→              <p className="text-sm text-muted-foreground">
+  1031→                {t.expense.submitTrackClaims}
+  1032→              </p>
+  1033→            </div>
+  1034→            <Button onClick={() => setShowExpenseDialog(true)} className="bg-gradient-to-r from-blue-500 to-indigo-600">
+  1035→              <Plus className="h-4 w-4 mr-2" />
+  1036→              {t.expense.newClaim}
+  1037→            </Button>
+  1038→          </div>
+  1039→        </CardHeader>
+  1040→        <CardContent>
+  1041→          {/* Expense Summary */}
+  1042→          <div className="grid grid-cols-3 gap-4 mb-6">
+  1043→            <div className="p-4 bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-950/20 dark:to-orange-950/20 rounded-lg text-center border border-yellow-200 dark:border-yellow-800">
+  1044→              <p className="text-3xl font-bold text-yellow-500">
+  1045→                {expenseRecords.filter(e => e.status === 'pending').length}
+  1046→              </p>
+  1047→              <p className="text-sm text-muted-foreground">{t.leave.pending}</p>
+  1048→            </div>
+  1049→            <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 rounded-lg text-center border border-emerald-200 dark:border-emerald-800">
+  1050→              <p className="text-3xl font-bold text-emerald-500">
+  1051→                ₹{expenseRecords.filter(e => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
+  1052→              </p>
+  1053→              <p className="text-sm text-muted-foreground">{t.leave.approved}</p>
+  1054→            </div>
+  1055→            <div className="p-4 bg-gradient-to-br from-red-50 to-pink-50 dark:from-red-950/20 dark:to-pink-950/20 rounded-lg text-center border border-red-200 dark:border-red-800">
+  1056→              <p className="text-3xl font-bold text-red-500">
+  1057→                {expenseRecords.filter(e => e.status === 'rejected').length}
+  1058→              </p>
+  1059→              <p className="text-sm text-muted-foreground">{t.leave.rejected}</p>
+  1060→            </div>
+  1061→          </div>
+  1062→
+  1063→          <ScrollArea className="max-h-[50dvh]">
+  1064→            <div className="space-y-3">
+  1065→              {expenseRecords.length === 0 ? (
+  1066→                <div className="text-center py-12 text-muted-foreground">
+  1067→                  <Receipt className="h-16 w-16 mx-auto mb-4 opacity-30" />
+  1068→                  <p className="text-lg font-medium">{t.expense.noExpenses}</p>
+  1069→                  <p className="text-sm mb-4">{t.expense.submitFirstClaim}</p>
+  1070→                  <Button onClick={() => setShowExpenseDialog(true)} className="bg-gradient-to-r from-blue-500 to-indigo-600">
+  1071→                    <Plus className="h-4 w-4 mr-2" />
+  1072→                    {t.expense.submitNewClaim}
+  1073→                  </Button>
+  1074→                </div>
+  1075→              ) : (
+  1076→                expenseRecords.map((expense) => (
+  1077→                  <motion.div
+  1078→                    key={expense.id}
+  1079→                    initial={{ opacity: 0, y: 10 }}
+  1080→                    animate={{ opacity: 1, y: 0 }}
+  1081→                    className="p-4 border rounded-xl bg-muted/30"
+  1082→                  >
+  1083→                    <div className="flex items-center justify-between mb-2">
+  1084→                      <div className="flex items-center gap-3">
+  1085→                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-white ${
+  1086→                          expense.category === 'medical' ? 'bg-gradient-to-br from-red-400 to-pink-500' :
+  1087→                          expense.category === 'petrol' ? 'bg-gradient-to-br from-green-400 to-emerald-500' :
+  1088→                          expense.category === 'food' ? 'bg-gradient-to-br from-orange-400 to-amber-500' :
+  1089→                          expense.category === 'travel' ? 'bg-gradient-to-br from-blue-400 to-indigo-500' :
+  1090→                          'bg-gradient-to-br from-gray-400 to-slate-500'
+  1091→                        }`}>
+  1092→                          <Receipt className="h-6 w-6" />
+  1093→                        </div>
+  1094→                        <div>
+  1095→                          <p className="font-medium">{expense.title}</p>
+  1096→                          <p className="text-sm text-muted-foreground capitalize">{expense.category} • {expense.expenseDate}</p>
+  1097→                        </div>
+  1098→                      </div>
+  1099→                      <div className="text-right">
+  1100→                        <p className="text-2xl font-bold">₹{expense.amount.toLocaleString()}</p>
+  1101→                        {expense.status === 'pending' ? (
+  1102→                          <Badge className="bg-yellow-500 text-white animate-pulse">
+  1103→                            <Clock className="h-3 w-3 mr-1" />
+  1104→                            {t.leave.pendingApproval}
+  1105→                          </Badge>
+  1106→                        ) : expense.status === 'approved' ? (
+  1107→                          <Badge className="bg-emerald-500 text-white">
+  1108→                            <Check className="h-3 w-3 mr-1" />
+  1109→                            {t.leave.approved}
+  1110→                          </Badge>
+  1111→                        ) : expense.status === 'paid' ? (
+  1112→                          <Badge className="bg-blue-500 text-white">
+  1113→                            <Check className="h-3 w-3 mr-1" />
+  1114→                            {t.salary.paid}
+  1115→                          </Badge>
+  1116→                        ) : (
+  1117→                          <Badge variant="destructive">
+  1118→                            <XCircle className="h-3 w-3 mr-1" />
+  1119→                            {t.leave.rejected}
+  1120→                          </Badge>
+  1121→                        )}
+  1122→                      </div>
+  1123→                    </div>
+  1124→                    
+  1125→                    {expense.description && (
+  1126→                      <div className="pt-2 border-t mt-2">
+  1127→                        <p className="text-sm text-muted-foreground">
+  1128→                          <span className="font-medium">{t.dashboard.descriptionLabel}:</span> {expense.description}
+  1129→                        </p>
+  1130→                      </div>
+  1131→                    )}
+  1132→
+  1133→                    {expense.rejectionReason && (
+  1134→                      <div className="pt-2 border-t mt-2">
+  1135→                        <p className="text-sm text-red-500">
+  1136→                          <span className="font-medium">{t.dashboard.rejectionReason}:</span> {expense.rejectionReason}
+  1137→                        </p>
+  1138→                      </div>
+  1139→                    )}
+  1140→                    
+  1141→                    <div className="flex items-center justify-between mt-2 pt-2 border-t">
+  1142→                      <span className="text-xs text-muted-foreground">
+  1143→                        {t.dashboard.submitted}: {new Date(expense.createdAt).toLocaleDateString()}
+  1144→                      </span>
+  1145→                      {expense.status === 'pending' && (
+  1146→                        <Button variant="ghost" size="sm" className="text-red-500 hover:bg-red-50"
+  1147→                          onClick={() => handleDeleteExpense(expense.id)}>
+  1148→                          <Trash2 className="h-4 w-4 mr-1" />
+  1149→                          {t.common.delete}
+  1150→                        </Button>
+  1151→                      )}
+  1152→                    </div>
+  1153→                  </motion.div>
+  1154→                ))
+  1155→              )}
+  1156→            </div>
+  1157→          </ScrollArea>
+  1158→        </CardContent>
+  1159→      </Card>
+  1160→    </div>
+  1161→  );
+  1162→
+  1163→  // Render incentives tab content
+  1164→  const renderIncentivesTab = () => (
+  1165→    <div className="space-y-4">
+  1166→      <Card className="border-0 shadow-md">
+  1167→        <CardHeader>
+  1168→          <CardTitle className="flex items-center gap-2">
+  1169→            <Gift className="h-5 w-5 text-orange-500" />
+  1170→            {t.incentive.myIncentives}
+  1171→          </CardTitle>
+  1172→          <p className="text-sm text-muted-foreground">
+  1173→            {t.dashboard.bonusesRewardsByAdmin}
+  1174→          </p>
+  1175→        </CardHeader>
+  1176→        <CardContent>
+  1177→          {/* Incentive Summary */}
+  1178→          <div className="grid grid-cols-2 gap-4 mb-6">
+  1179→            <div className="p-4 bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20 rounded-lg text-center border border-orange-200 dark:border-orange-800">
+  1180→              <p className="text-3xl font-bold text-orange-500">₹{incentiveRecords.reduce((sum, i) => sum + i.amount, 0).toLocaleString()}</p>
+  1181→              <p className="text-sm text-muted-foreground">{t.incentive.totalEarned}</p>
+  1182→            </div>
+  1183→            <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 rounded-lg text-center border border-emerald-200 dark:border-emerald-800">
+  1184→              <p className="text-3xl font-bold text-emerald-500">{incentiveRecords.length}</p>
+  1185→              <p className="text-sm text-muted-foreground">{t.incentive.incentivesReceived}</p>
+  1186→            </div>
+  1187→          </div>
+  1188→
+  1189→          <ScrollArea className="max-h-[50dvh]">
+  1190→            <div className="space-y-3">
+  1191→              {incentiveRecords.length === 0 ? (
+  1192→                <div className="text-center py-12 text-muted-foreground">
+  1193→                  <Gift className="h-16 w-16 mx-auto mb-4 opacity-30" />
+  1194→                  <p className="text-lg font-medium">{t.incentive.noIncentives}</p>
+  1195→                  <p className="text-sm">{t.dashboard.incentivesWillAppear}</p>
+  1196→                </div>
+  1197→              ) : (
+  1198→                incentiveRecords.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((incentive) => (
+  1199→                  <motion.div
+  1200→                    key={incentive.id}
+  1201→                    initial={{ opacity: 0, y: 10 }}
+  1202→                    animate={{ opacity: 1, y: 0 }}
+  1203→                    className="p-4 border rounded-xl bg-muted/30"
+  1204→                  >
+  1205→                    <div className="flex items-center justify-between mb-2">
+  1206→                      <div className="flex items-center gap-3">
+  1207→                        <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white">
+  1208→                          <Gift className="h-6 w-6" />
+  1209→                        </div>
+  1210→                        <div>
+  1211→                          <p className="font-medium capitalize">{incentive.type} {t.dashboard.incentiveLabel}</p>
+  1212→                          <p className="text-sm text-muted-foreground">{incentive.month}</p>
+  1213→                        </div>
+  1214→                      </div>
+  1215→                      <p className="text-2xl font-bold text-orange-500">+₹{incentive.amount.toLocaleString()}</p>
+  1216→                    </div>
+  1217→                    
+  1218→                    <div className="pt-2 border-t mt-2">
+  1219→                      <p className="text-sm text-muted-foreground">
+  1220→                        <span className="font-medium">{t.dashboard.reasonLabel}:</span> {incentive.reason}
+  1221→                      </p>
+  1222→                    </div>
+  1223→                    
+  1224→                    <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
+  1225→                      <span>{t.dashboard.received}: {new Date(incentive.createdAt).toLocaleDateString()}</span>
+  1226→                    </div>
+  1227→                  </motion.div>
+  1228→                ))
+  1229→              )}
+  1230→            </div>
+  1231→          </ScrollArea>
+  1232→        </CardContent>
+  1233→      </Card>
+  1234→    </div>
+  1235→  );
+  1236→
+  1237→  return (
+  1238→    <div className="min-h-[100dvh] flex flex-col bg-background">
+  1239→      {/* Header */}
+  1240→      <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-sm">
+  1241→        <div className="flex items-center justify-between px-4 py-3">
+  1242→          <div className="flex items-center gap-3">
+  1243→            <Button variant="ghost" size="icon" className="md:hidden min-h-11 min-w-11" onClick={() => setSidebarOpen(true)}>
+  1244→              <Menu className="h-5 w-5" />
+  1245→            </Button>
+  1246→            <div className="flex items-center gap-2">
+  1247→              <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
+  1248→                <img 
+  1249→                  src="/logo.jpg" 
+  1250→                  alt="HB Sallery Box Logo" 
+  1251→                  className="w-full h-full object-cover"
+  1252→                />
+  1253→              </div>
+  1254→              <span className="font-bold text-lg hidden sm:inline">HB Sallery Box</span>
+  1255→            </div>
+  1256→          </div>
+  1257→          <div className="flex items-center gap-2">
+  1258→            <ThemeToggle />
+  1259→            <LanguageToggle />
+  1260→            <Button variant="ghost" size="icon" className="relative" onClick={() => setShowNotificationDialog(true)}>
+  1261→              <Bell className="h-5 w-5" />
+  1262→              {unreadCount > 0 && (
+  1263→                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+  1264→                  {unreadCount}
+  1265→                </span>
+  1266→              )}
+  1267→            </Button>
+  1268→            <Avatar className="h-8 w-8">
+  1269→              <AvatarImage src={user?.profilePhoto} alt={user?.name || 'Employee'} />
+  1270→              <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white text-sm">
+  1271→                {user?.name?.charAt(0) || 'E'}
+  1272→              </AvatarFallback>
+  1273→            </Avatar>
+  1274→          </div>
+  1275→        </div>
+  1276→      </header>
+  1277→
+  1278→      {/* Mobile Sidebar */}
+  1279→      <AnimatePresence>
+  1280→        {sidebarOpen && (
+  1281→          <>
+  1282→            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+  1283→              className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setSidebarOpen(false)} />
+  1284→            <motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
+  1285→              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+  1286→              className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r z-50 md:hidden pt-[env(safe-area-inset-top)]">
+  1287→              <div className="p-4 border-b flex items-center justify-between">
+  1288→                <div className="flex items-center gap-2">
+  1289→                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
+  1290→                    <img 
+  1291→                      src="/logo.jpg" 
+  1292→                      alt="HB Sallery Box Logo" 
+  1293→                      className="w-full h-full object-cover"
+  1294→                    />
+  1295→                  </div>
+  1296→                  <span className="font-bold">{t.dashboard.employeePanel}</span>
+  1297→                </div>
+  1298→                <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
+  1299→                  <X className="h-5 w-5" />
+  1300→                </Button>
+  1301→              </div>
+  1302→              <nav className="p-4 space-y-1">
+  1303→                {menuItems.map((item) => (
+  1304→                  <button key={item.id} onClick={() => handleMenuClick(item.id)}
+  1305→                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+  1306→                      activeTab === item.id ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted'
+  1307→                    }`}>
+  1308→                    <item.icon className="h-5 w-5" />
+  1309→                    <span>{item.label}</span>
+  1310→                  </button>
+  1311→                ))}
+  1312→                <div className="pt-4 mt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))]">
+  1313→                  <button onClick={onLogout}
+  1314→                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors">
+  1315→                    <LogOut className="h-5 w-5" />
+  1316→                    <span>{t.common.logout}</span>
+  1317→                  </button>
+  1318→                </div>
+  1319→              </nav>
+  1320→            </motion.aside>
+  1321→          </>
+  1322→        )}
+  1323→      </AnimatePresence>
+  1324→
+  1325→      {/* Main Content */}
+  1326→      <div className="flex-1 flex">
+  1327→        {/* Desktop Sidebar */}
+  1328→        <aside className="hidden md:flex w-64 flex-col border-r bg-muted/30">
+  1329→          <nav className="flex-1 p-4 space-y-1">
+  1330→            {menuItems.map((item) => (
+  1331→              <button key={item.id} onClick={() => handleMenuClick(item.id)}
+  1332→                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+  1333→                  activeTab === item.id ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted'
+  1334→                }`}>
+  1335→                <item.icon className="h-5 w-5" />
+  1336→                <span>{item.label}</span>
+  1337→              </button>
+  1338→            ))}
+  1339→          </nav>
+  1340→          <div className="p-4 border-t">
+  1341→            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+  1342→              <Avatar className="h-10 w-10">
+  1343→                <AvatarImage src={user?.profilePhoto} alt={user?.name || 'Employee'} />
+  1344→                <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
+  1345→                  {user?.name?.charAt(0) || 'E'}
+  1346→                </AvatarFallback>
+  1347→              </Avatar>
+  1348→              <div className="flex-1 min-w-0">
+  1349→                <p className="text-sm font-medium truncate">{user?.name}</p>
+  1350→                <Badge variant="secondary" className="text-xs px-2 py-0 h-5">{t.dashboard.employeeRole}</Badge>
+  1351→              </div>
+  1352→            </div>
+  1353→            <Button variant="ghost" onClick={onLogout}
+  1354→              className="w-full mt-2 text-red-500 hover:bg-red-500/10 hover:text-red-500">
+  1355→              <LogOut className="h-4 w-4 mr-2" />
+  1356→              {t.common.logout}
+  1357→            </Button>
+  1358→          </div>
+  1359→        </aside>
+  1360→
+  1361→        {/* Content Area */}
+  1362→        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+  1363→          <div className="max-w-6xl mx-auto space-y-6">
+  1364→            {activeTab === 'attendance' ? (
+  1365→              renderAttendanceTab()
+  1366→            ) : activeTab === 'expenses' ? (
+  1367→              renderExpensesTab()
+  1368→            ) : activeTab === 'incentives' ? (
+  1369→              renderIncentivesTab()
+  1370→            ) : (
+  1371→              <>
+  1372→                {/* Welcome Section */}
+  1373→                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+  1374→                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+  1375→                  <div>
+  1376→                    <h1 className="text-2xl font-bold">{t.dashboard.welcomeEmployee}, {user?.name?.split(' ')[0] || t.dashboard.employeeRole}!</h1>
+  1377→                    <p className="text-muted-foreground">
+  1378→                      {currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+  1379→                    </p>
+  1380→                  </div>
+  1381→                  <div className="text-right">
+  1382→                    <p className="text-3xl font-bold font-mono">
+  1383→                      {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+  1384→                    </p>
+  1385→                    {isPunchedIn && punchTime.in && (
+  1386→                      <p className="text-sm text-emerald-500">{t.dashboard.checkedInAt} {punchTime.in}</p>
+  1387→                    )}
+  1388→                  </div>
+  1389→                </motion.div>
+  1390→
+  1391→                {/* Punch In/Out Card with GPS Status */}
+  1392→                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+  1393→                  {isTodayApprovedLeave ? (
+  1394→                    // Approved Leave Day Card
+  1395→                    <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white">
+  1396→                      <CardContent className="p-6">
+  1397→                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+  1398→                          <div>
+  1399→                            <div className="flex items-center gap-2 mb-2">
+  1400→                              <Calendar className="h-6 w-6" />
+  1401→                              <h2 className="text-xl font-bold">{t.dashboard.youAreOnLeave}</h2>
+  1402→                            </div>
+  1403→                            <p className="text-blue-100">
+  1404→                              {getLeaveTypeLabel(todayLeaveRecord?.type || '')} {t.dashboard.leaveLabel}
+  1405→                            </p>
+  1406→                            <p className="text-sm text-blue-200 mt-1">
+  1407→                              {todayLeaveRecord && (
+  1408→                                <>
+  1409→                                  {new Date(todayLeaveRecord.startDate).toLocaleDateString()} - {new Date(todayLeaveRecord.endDate).toLocaleDateString()}
+  1410→                                </>
+  1411→                              )}
+  1412→                            </p>
+  1413→                            {todayLeaveRecord?.reason && (
+  1414→                              <p className="text-sm text-blue-200 mt-2">
+  1415→                                {t.dashboard.reasonLabel}: {todayLeaveRecord.reason}
+  1416→                              </p>
+  1417→                            )}
+  1418→                          </div>
+  1419→                          <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg">
+  1420→                            <Check className="h-5 w-5" />
+  1421→                            <span className="font-medium">{t.leave.approved}</span>
+  1422→                          </div>
+  1423→                        </div>
+  1424→                      </CardContent>
+  1425→                    </Card>
+  1426→                  ) : (
+  1427→                    // Normal Punch Card
+  1428→                    <Card className="border-0 shadow-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+  1429→                      <CardContent className="p-6">
+  1430→                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+  1431→                          <div>
+  1432→                            <h2 className="text-xl font-bold mb-2">
+  1433→                              {isPunchedIn ? t.dashboard.checkedIn : t.dashboard.readyToCheckIn}
+  1434→                            </h2>
+  1435→                            <div className="flex items-center gap-4 text-emerald-100">
+  1436→                              {punchTime.in && (
+  1437→                                <span className="flex items-center gap-1">
+  1438→                                  <Clock className="h-4 w-4" />
+  1439→                                  {t.attendance.inLabel}: {punchTime.in}
+  1440→                                </span>
+  1441→                              )}
+  1442→                              {punchTime.out && (
+  1443→                                <span className="flex items-center gap-1">
+  1444→                                  <Clock className="h-4 w-4" />
+  1445→                                  {t.attendance.outLabel}: {punchTime.out}
+  1446→                                </span>
+  1447→                              )}
+  1448→                            </div>
+  1449→                          </div>
+  1450→                          <div className="flex gap-3">
+  1451→                            {!isPunchedIn ? (
+  1452→                              <Button size="lg" onClick={() => handlePunch('in')}
+  1453→                                className="bg-white text-emerald-600 hover:bg-emerald-50">
+  1454→                                <Check className="h-5 w-5 mr-2" />
+  1455→                                {t.attendance.punchIn}
+  1456→                              </Button>
+  1457→                            ) : (
+  1458→                              <Button size="lg" onClick={() => handlePunch('out')}
+  1459→                                className="bg-white/20 text-white hover:bg-white/30">
+  1460→                                <LogOut className="h-5 w-5 mr-2" />
+  1461→                                {t.attendance.punchOut}
+  1462→                              </Button>
+  1463→                            )}
+  1464→                          </div>
+  1465→                        </div>
+  1466→
+  1467→                        {/* Status indicators */}
+  1468→                        <div className="flex flex-wrap items-center gap-4 mt-4 text-emerald-100 text-sm">
+  1469→                          <span className={`flex items-center gap-1 ${permissionStatus === 'granted' ? '' : 'text-yellow-300'}`}>
+  1470→                            <MapPin className="h-4 w-4" />
+  1471→                            {permissionStatus === 'granted' ? t.attendance.gpsActive : t.attendance.gpsRequired}
+  1472→                          </span>
+  1473→                          <span className="flex items-center gap-1">
+  1474→                            <Camera className="h-4 w-4" />
+  1475→                            {t.attendance.photoRequired}
+  1476→                          </span>
+  1477→                          {punchInLocation && (
+  1478→                            <span className="flex items-center gap-1">
+  1479→                              <Navigation className="h-4 w-4" />
+  1480→                              {t.attendance.punchIn}: {punchInLocation.lat.toFixed(4)}, {punchInLocation.lng.toFixed(4)}
+  1481→                            </span>
+  1482→                          )}
+  1483→                          {punchOutLocation && (
+  1484→                            <span className="flex items-center gap-1">
+  1485→                              <Navigation className="h-4 w-4" />
+  1486→                              {t.attendance.punchOut}: {punchOutLocation.lat.toFixed(4)}, {punchOutLocation.lng.toFixed(4)}
+  1487→                            </span>
+  1488→                          )}
+  1489→                        </div>
+  1490→                      </CardContent>
+  1491→                    </Card>
+  1492→                  )}
+  1493→                </motion.div>
+  1494→
+  1495→                {/* Quick Stats */}
+  1496→                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+  1497→                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+  1498→                    <Card className="border-0 shadow-md">
+  1499→                      <CardContent className="p-4">
+  1500→                        <div className="flex items-center gap-2 mb-2">
+  1501→                          <Clock className="h-4 w-4 text-emerald-500" />
+  1502→                          <p className="text-sm text-muted-foreground">{t.dashboard.thisMonthHours}</p>
+  1503→                        </div>
+  1504→                        <p className="text-2xl font-bold text-emerald-500">{attendanceHistory.reduce((sum, a) => sum + (a.workHours || 0), 0).toFixed(1)}h</p>
+  1505→                      </CardContent>
+  1506→                    </Card>
+  1507→                    
+  1508→                    <Card 
+  1509→                      className="border-0 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
+  1510→                      onClick={() => setShowLeaveHistoryDialog(true)}
+  1511→                    >
+  1512→                      <CardContent className="p-4">
+  1513→                        <div className="flex items-center gap-2 mb-2">
+  1514→                          <Calendar className="h-4 w-4 text-blue-500" />
+  1515→                          <p className="text-sm text-muted-foreground">{t.dashboard.leavesLeft}</p>
+  1516→                        </div>
+  1517→                        <p className="text-2xl font-bold text-blue-500">{leavesLeft}</p>
+  1518→                        <p className="text-xs text-muted-foreground mt-1">{t.dashboard.tapToViewHistory}</p>
+  1519→                      </CardContent>
+  1520→                    </Card>
+  1521→                    
+  1522→                    <Card className="border-0 shadow-md">
+  1523→                      <CardContent className="p-4">
+  1524→                        <div className="flex items-center gap-2 mb-2">
+  1525→                          <DollarSign className="h-4 w-4 text-purple-500" />
+  1526→                          <p className="text-sm text-muted-foreground">{t.dashboard.netSalary}</p>
+  1527→                        </div>
+  1528→                        <p className="text-2xl font-bold text-purple-500">₹{salaryData.netSalary.toLocaleString()}</p>
+  1529→                      </CardContent>
+  1530→                    </Card>
+  1531→                    
+  1532→                    <Card 
+  1533→                      className="border-0 shadow-md cursor-pointer hover:shadow-lg transition-shadow"
+  1534→                      onClick={() => setShowIncentiveDialog(true)}
+  1535→                    >
+  1536→                      <CardContent className="p-4">
+  1537→                        <div className="flex items-center gap-2 mb-2">
+  1538→                          <Gift className="h-4 w-4 text-orange-500" />
+  1539→                          <p className="text-sm text-muted-foreground">{t.dashboard.incentives}</p>
+  1540→                        </div>
+  1541→                        <p className="text-2xl font-bold text-orange-500">₹{incentiveRecords.reduce((sum, i) => sum + i.amount, 0).toLocaleString()}</p>
+  1542→                        <p className="text-xs text-muted-foreground mt-1">{t.common.viewDetails}</p>
+  1543→                      </CardContent>
+  1544→                    </Card>
+  1545→                  </div>
+  1546→                </motion.div>
+  1547→
+  1548→                {/* Quick Actions */}
+  1549→                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+  1550→                  <Card className="border-0 shadow-md">
+  1551→                    <CardHeader className="pb-3">
+  1552→                      <CardTitle className="text-lg">{t.dashboard.quickActions}</CardTitle>
+  1553→                    </CardHeader>
+  1554→                    <CardContent>
+  1555→                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+  1556→                        <button onClick={() => setShowLeaveDialog(true)}
+  1557→                          className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-all relative">
+  1558→                          <Calendar className="h-6 w-6 text-emerald-500" />
+  1559→                          <span className="text-sm font-medium">{t.dashboard.applyLeave}</span>
+  1560→                        </button>
+  1561→                        <button onClick={() => setShowExpenseHistoryDialog(true)}
+  1562→                          className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-all relative">
+  1563→                          <Receipt className="h-6 w-6 text-emerald-500" />
+  1564→                          <span className="text-sm font-medium">{t.dashboard.myExpenses}</span>
+  1565→                          {expenseRecords.filter(e => e.status === 'pending').length > 0 && (
+  1566→                            <span className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+  1567→                              {expenseRecords.filter(e => e.status === 'pending').length}
+  1568→                            </span>
+  1569→                          )}
+  1570→                        </button>
+  1571→                        <button onClick={() => setShowIncentiveDialog(true)}
+  1572→                          className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-all">
+  1573→                          <Gift className="h-6 w-6 text-emerald-500" />
+  1574→                          <span className="text-sm font-medium">{t.incentive.myIncentives}</span>
+  1575→                        </button>
+  1576→                        <button onClick={() => setShowProfileDialog(true)}
+  1577→                          className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-all">
+  1578→                          <User className="h-6 w-6 text-emerald-500" />
+  1579→                          <span className="text-sm font-medium">{t.dashboard.editProfile}</span>
+  1580→                        </button>
+  1581→                      </div>
+  1582→                    </CardContent>
+  1583→                  </Card>
+  1584→                </motion.div>
+  1585→
+  1586→                {/* Pending Expense Claims Alert */}
+  1587→                {expenseRecords.filter(e => e.status === 'pending').length > 0 && (
+  1588→                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+  1589→                    <Card className="border-0 shadow-md border-l-4 border-l-yellow-500 bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-950/20 dark:to-amber-950/20">
+  1590→                      <CardContent className="p-4">
+  1591→                        <div className="flex items-center justify-between">
+  1592→                          <div className="flex items-center gap-3">
+  1593→                            <div className="w-12 h-12 rounded-full bg-yellow-500 flex items-center justify-center text-white">
+  1594→                              <Clock className="h-6 w-6" />
+  1595→                            </div>
+  1596→                            <div>
+  1597→                              <p className="font-semibold text-yellow-700 dark:text-yellow-400">
+  1598→                                {t.dashboard.pendingExpenseApprovals}
+  1599→                              </p>
+  1600→                              <p className="text-sm text-muted-foreground">
+  1601→                                {expenseRecords.filter(e => e.status === 'pending').length} {t.dashboard.expenseClaimsWaiting}
+  1602→                              </p>
+  1603→                            </div>
+  1604→                          </div>
+  1605→                          <Button 
+  1606→                            variant="outline" 
+  1607→                            className="border-yellow-500 text-yellow-600 hover:bg-yellow-100"
+  1608→                            onClick={() => setShowExpenseHistoryDialog(true)}
+  1609→                          >
+  1610→                            {t.dashboard.viewClaims}
+  1611→                          </Button>
+  1612→                        </div>
+  1613→                      </CardContent>
+  1614→                    </Card>
+  1615→                  </motion.div>
+  1616→                )}
+  1617→
+  1618→                {/* Recent Attendance Preview */}
+  1619→                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+  1620→                  <Card className="border-0 shadow-md">
+  1621→                    <CardHeader className="pb-3">
+  1622→                      <div className="flex items-center justify-between">
+  1623→                        <CardTitle className="text-lg">{t.attendance.recentAttendance}</CardTitle>
+  1624→                        <Button variant="ghost" size="sm" onClick={() => setActiveTab('attendance')}>
+  1625→                          {t.common.viewAll}
+  1626→                        </Button>
+  1627→                      </div>
+  1628→                    </CardHeader>
+  1629→                    <CardContent>
+  1630→                      <div className="space-y-2">
+  1631→                        {attendanceHistory.slice(0, 3).map((record) => (
+  1632→                          <div key={record.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+  1633→                            <div className="w-12 h-12 rounded-lg bg-background flex flex-col items-center justify-center">
+  1634→                              <span className="text-xs text-muted-foreground">
+  1635→                                {new Date(record.date).toLocaleDateString('en-US', { month: 'short' })}
+  1636→                              </span>
+  1637→                              <span className="text-lg font-bold">{new Date(record.date).getDate()}</span>
+  1638→                            </div>
+  1639→                            <div className="flex-1">
+  1640→                              <div className="flex items-center gap-2">
+  1641→                                <Badge variant={record.status === 'present' ? 'default' : record.status === 'late' ? 'secondary' : 'destructive'}>
+  1642→                                  {getStatusLabel(record.status)}
+  1643→                                </Badge>
+  1644→                                <span className="text-xs text-muted-foreground">{t.attendance.locked}</span>
+  1645→                              </div>
+  1646→                              <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
+  1647→                                {record.punchIn && <span>{t.attendance.inLabel}: {to12HourFormat(record.punchIn)}</span>}
+  1648→                                {record.punchOut && <span>{t.attendance.outLabel}: {to12HourFormat(record.punchOut)}</span>}
+  1649→                                {record.workHours > 0 && <span>{record.workHours}h</span>}
+  1650→                              </div>
+  1651→                            </div>
+  1652→                            {(record.punchInPhoto || record.punchOutPhoto) && (
+  1653→                              <ImageIcon className="h-4 w-4 text-muted-foreground" />
+  1654→                            )}
+  1655→                          </div>
+  1656→                        ))}
+  1657→                      </div>
+  1658→                    </CardContent>
+  1659→                  </Card>
+  1660→                </motion.div>
+  1661→              </>
+  1662→            )}
+  1663→          </div>
+  1664→        </main>
+  1665→      </div>
+  1666→
+  1667→      {/* Mobile Bottom Navigation */}
+  1668→      <nav className="md:hidden sticky bottom-0 border-t bg-background/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]">
+  1669→        <div className="flex justify-around py-2">
+  1670→          {menuItems.slice(0, 4).map((item) => (
+  1671→            <button key={item.id} onClick={() => handleMenuClick(item.id)}
+  1672→              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors min-h-[52px] ${
+  1673→                activeTab === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
+  1674→              }`}>
+  1675→              <item.icon className="h-5 w-5" />
+  1676→              <span className="text-xs">{item.label}</span>
+  1677→            </button>
+  1678→          ))}
+  1679→          <button onClick={() => setSidebarOpen(true)}
+  1680→            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground min-h-[52px]">
+  1681→            <Menu className="h-5 w-5" />
+  1682→            <span className="text-xs">{t.dashboard.more}</span>
+  1683→          </button>
+  1684→        </div>
+  1685→      </nav>
+  1686→
+  1687→      {/* Camera Capture Dialog */}
+  1688→      <CameraCapture
+  1689→        open={showCamera}
+  1690→        onCapture={completePunch}
+  1691→        onClose={() => {
+  1692→          setShowCamera(false);
+  1693→          setPendingPunchType(null);
+  1694→        }}
+  1695→        title={pendingPunchType === 'in' ? `📸 ${t.attendance.capturePunchInSelfie}` : `📸 ${t.attendance.capturePunchOutSelfie}`}
+  1696→      />
+  1697→
+  1698→      {/* Photo View Dialog */}
+  1699→      <Dialog open={showPhotoDialog} onOpenChange={setShowPhotoDialog}>
+  1700→        <DialogContent className="max-w-md p-0 overflow-hidden">
+  1701→          <DialogHeader className="sr-only">
+  1702→            <DialogTitle>{t.attendance.attendancePhoto}</DialogTitle>
+  1703→          </DialogHeader>
+  1704→          {selectedPhoto && (
+  1705→            <img
+  1706→              src={selectedPhoto}
+  1707→              alt={t.attendance.attendancePhoto}
+  1708→              className="w-full h-auto"
+  1709→            />
+  1710→          )}
+  1711→        </DialogContent>
+  1712→      </Dialog>
+  1713→
+  1714→      {/* Leave Dialog */}
+  1715→      <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
+  1716→        <DialogContent className="max-w-md">
+  1717→          <DialogHeader>
+  1718→            <DialogTitle>{t.dashboard.applyForLeave}</DialogTitle>
+  1719→          </DialogHeader>
+  1720→          <div className="space-y-4">
+  1721→            <div className="space-y-2">
+  1722→              <Label>{t.leave.leaveType}</Label>
+  1723→              <select
+  1724→                className="w-full h-10 rounded-md border border-input bg-background px-3"
+  1725→                value={leaveForm.type}
+  1726→                onChange={(e) => setLeaveForm({ ...leaveForm, type: e.target.value })}
+  1727→              >
+  1728→                <option value="casual">{t.leave.casual} {t.dashboard.leaveLabel}</option>
+  1729→                <option value="sick">{t.leave.sick} {t.dashboard.leaveLabel}</option>
+  1730→                <option value="earned">{t.leave.earned} {t.dashboard.leaveLabel}</option>
+  1731→                <option value="unpaid">{t.leave.unpaid} {t.dashboard.leaveLabel}</option>
+  1732→              </select>
+  1733→            </div>
+  1734→            <div className="grid grid-cols-2 gap-4">
+  1735→              <div className="space-y-2">
+  1736→                <Label>{t.leave.startDate}</Label>
+  1737→                <Input type="date" value={leaveForm.startDate}
+  1738→                  onChange={(e) => setLeaveForm({ ...leaveForm, startDate: e.target.value })} />
+  1739→              </div>
+  1740→              <div className="space-y-2">
+  1741→                <Label>{t.leave.endDate}</Label>
+  1742→                <Input type="date" value={leaveForm.endDate}
+  1743→                  onChange={(e) => setLeaveForm({ ...leaveForm, endDate: e.target.value })} />
+  1744→              </div>
+  1745→            </div>
+  1746→            <div className="space-y-2">
+  1747→              <Label>{t.leave.reason}</Label>
+  1748→              <Textarea placeholder={t.dashboard.enterReasonForLeave}
+  1749→                value={leaveForm.reason}
+  1750→                onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })} />
+  1751→            </div>
+  1752→            <div className="flex gap-2">
+  1753→              <Button variant="outline" className="flex-1" onClick={() => setShowLeaveDialog(false)}>
+  1754→                {t.common.cancel}
+  1755→              </Button>
+  1756→              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handleApplyLeave}>
+  1757→                {t.common.submit}
+  1758→              </Button>
+  1759→            </div>
+  1760→          </div>
+  1761→        </DialogContent>
+  1762→      </Dialog>
+  1763→
+  1764→      {/* Salary Dialog */}
+  1765→      <Dialog open={showSalaryDialog} onOpenChange={setShowSalaryDialog}>
+  1766→        <DialogContent className="max-w-2xl max-h-[90dvh]">
+  1767→          <DialogHeader>
+  1768→            <DialogTitle className="flex items-center gap-2">
+  1769→              <DollarSign className="h-5 w-5 text-emerald-500" />
+  1770→              {t.salary.salaryHistory}
+  1771→            </DialogTitle>
+  1772→          </DialogHeader>
+  1773→          <ScrollArea className="max-h-[70dvh]">
+  1774→            <div className="space-y-4">
+  1775→              {/* Current Salary Info */}
+  1776→              <Card className="border-0 shadow-md bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+  1777→                <CardContent className="p-4">
+  1778→                  <h3 className="font-medium mb-2">{t.dashboard.currentBaseSalary}</h3>
+  1779→                  <p className="text-3xl font-bold">₹{salaryData.baseSalary.toLocaleString()}</p>
+  1780→                  <p className="text-sm text-emerald-100 mt-1">{t.dashboard.perMonth}</p>
+  1781→                </CardContent>
+  1782→              </Card>
+  1783→
+  1784→              {/* Salary History List */}
+  1785→              <div className="space-y-3">
+  1786→                <h4 className="font-medium text-muted-foreground">{t.dashboard.paymentHistory}</h4>
+  1787→                
+  1788→                {salaryHistory.length === 0 ? (
+  1789→                  <div className="text-center py-8 text-muted-foreground">
+  1790→                    <DollarSign className="h-12 w-12 mx-auto mb-3 opacity-50" />
+  1791→                    <p className="text-lg font-medium">{t.salary.noSalaryRecords}</p>
+  1792→                    <p className="text-sm">{t.dashboard.salaryPaymentsWillAppear}</p>
+  1793→                  </div>
+  1794→                ) : (
+  1795→                  salaryHistory.map((record) => (
+  1796→                    <div key={record.id} className="p-4 border rounded-xl bg-muted/30 space-y-3">
+  1797→                      <div className="flex items-center justify-between">
+  1798→                        <div className="flex items-center gap-3">
+  1799→                          <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex flex-col items-center justify-center text-white">
+  1800→                            <span className="text-xs">
+  1801→                              {record.month.split('-')[1] === '01' ? 'Jan' :
+  1802→                               record.month.split('-')[1] === '02' ? 'Feb' :
+  1803→                               record.month.split('-')[1] === '03' ? 'Mar' :
+  1804→                               record.month.split('-')[1] === '04' ? 'Apr' :
+  1805→                               record.month.split('-')[1] === '05' ? 'May' :
+  1806→                               record.month.split('-')[1] === '06' ? 'Jun' :
+  1807→                               record.month.split('-')[1] === '07' ? 'Jul' :
+  1808→                               record.month.split('-')[1] === '08' ? 'Aug' :
+  1809→                               record.month.split('-')[1] === '09' ? 'Sep' :
+  1810→                               record.month.split('-')[1] === '10' ? 'Oct' :
+  1811→                               record.month.split('-')[1] === '11' ? 'Nov' : 'Dec'}
+  1812→                            </span>
+  1813→                            <span className="text-sm font-bold">{record.month.split('-')[0].slice(2)}</span>
+  1814→                          </div>
+  1815→                          <div>
+  1816→                            <p className="font-medium">
+  1817→                              {record.month.split('-')[1] === '01' ? 'January' :
+  1818→                               record.month.split('-')[1] === '02' ? 'February' :
+  1819→                               record.month.split('-')[1] === '03' ? 'March' :
+  1820→                               record.month.split('-')[1] === '04' ? 'April' :
+  1821→                               record.month.split('-')[1] === '05' ? 'May' :
+  1822→                               record.month.split('-')[1] === '06' ? 'June' :
+  1823→                               record.month.split('-')[1] === '07' ? 'July' :
+  1824→                               record.month.split('-')[1] === '08' ? 'August' :
+  1825→                               record.month.split('-')[1] === '09' ? 'September' :
+  1826→                               record.month.split('-')[1] === '10' ? 'October' :
+  1827→                               record.month.split('-')[1] === '11' ? 'November' : 'December'} {record.month.split('-')[0]}
+  1828→                            </p>
+  1829→                            <Badge variant={record.status === 'paid' ? 'default' : 'secondary'}>
+  1830→                              {record.status === 'paid' ? t.salary.paid : t.salary.pending}
+  1831→                            </Badge>
+  1832→                          </div>
+  1833→                        </div>
+  1834→                        <div className="text-right">
+  1835→                          <p className="text-2xl font-bold text-emerald-500">₹{record.netSalary.toLocaleString()}</p>
+  1836→                          {record.paidAt && (
+  1837→                            <p className="text-xs text-muted-foreground">
+  1838→                              {t.salary.paid}: {new Date(record.paidAt).toLocaleDateString()}
+  1839→                            </p>
+  1840→                          )}
+  1841→                        </div>
+  1842→                      </div>
+  1843→                      
+  1844→                      {/* Salary Breakdown */}
+  1845→                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-3 border-t">
+  1846→                        <div className="text-center p-2 bg-background rounded-lg">
+  1847→                          <p className="text-xs text-muted-foreground">{t.salary.baseSalary}</p>
+  1848→                          <p className="font-medium">₹{record.baseSalary.toLocaleString()}</p>
+  1849→                        </div>
+  1850→                        <div className="text-center p-2 bg-background rounded-lg">
+  1851→                          <p className="text-xs text-muted-foreground">{t.salary.overtime}</p>
+  1852→                          <p className="font-medium text-blue-500">+₹{record.overtime.toLocaleString()}</p>
+  1853→                        </div>
+  1854→                        <div className="text-center p-2 bg-background rounded-lg">
+  1855→                          <p className="text-xs text-muted-foreground">{t.salary.incentives}</p>
+  1856→                          <p className="font-medium text-purple-500">+₹{record.incentives.toLocaleString()}</p>
+  1857→                        </div>
+  1858→                        <div className="text-center p-2 bg-background rounded-lg">
+  1859→                          <p className="text-xs text-muted-foreground">{t.salary.deductions}</p>
+  1860→                          <p className="font-medium text-red-500">-₹{record.deductions.toLocaleString()}</p>
+  1861→                        </div>
+  1862→                      </div>
+  1863→                    </div>
+  1864→                  ))
+  1865→                )}
+  1866→              </div>
+  1867→            </div>
+  1868→          </ScrollArea>
+  1869→        </DialogContent>
+  1870→      </Dialog>
+  1871→
+  1872→      {/* Profile Dialog */}
+  1873→      <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
+  1874→        <DialogContent className="max-w-md">
+  1875→          <DialogHeader>
+  1876→            <DialogTitle>{t.dashboard.editProfile}</DialogTitle>
+  1877→          </DialogHeader>
+  1878→          <div className="space-y-4">
+  1879→            <div className="flex justify-center">
+  1880→              <div className="relative">
+  1881→                <Avatar className="h-20 w-20">
+  1882→                  <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white text-2xl">
+  1883→                    {user?.name?.charAt(0) || 'E'}
+  1884→                  </AvatarFallback>
+  1885→                </Avatar>
+  1886→                <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center min-h-11 min-w-11">
+  1887→                  <Camera className="h-4 w-4" />
+  1888→                </button>
+  1889→              </div>
+  1890→            </div>
+  1891→            <div className="space-y-2">
+  1892→              <Label>{t.dashboard.fullName}</Label>
+  1893→              <Input value={profileForm.name}
+  1894→                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} />
+  1895→            </div>
+  1896→            <div className="space-y-2">
+  1897→              <Label>{t.employee.email}</Label>
+  1898→              <Input type="email" value={profileForm.email}
+  1899→                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} />
+  1900→            </div>
+  1901→            <div className="space-y-2">
+  1902→              <Label>{t.employee.address}</Label>
+  1903→              <Textarea value={profileForm.address}
+  1904→                onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })} />
+  1905→            </div>
+  1906→            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+  1907→              <div className="flex items-center gap-2">
+  1908→                <Fingerprint className="h-4 w-4" />
+  1909→                <span className="text-sm">{t.settings.biometricLock}</span>
+  1910→              </div>
+  1911→              <button onClick={handleToggleBiometric}
+  1912→                className={`w-12 h-6 rounded-full transition-colors ${user?.biometricEnabled ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}>
+  1913→                <div className={`w-5 h-5 bg-white rounded-full transition-transform ${user?.biometricEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+  1914→              </button>
+  1915→            </div>
+  1916→            <div className="flex gap-2">
+  1917→              <Button variant="outline" className="flex-1" onClick={() => setShowProfileDialog(false)}>
+  1918→                {t.common.cancel}
+  1919→              </Button>
+  1920→              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={handleUpdateProfile}>
+  1921→                {t.dashboard.saveChanges}
+  1922→              </Button>
+  1923→            </div>
+  1924→          </div>
+  1925→        </DialogContent>
+  1926→      </Dialog>
+  1927→
+  1928→      {/* Notifications Dialog */}
+  1929→      <Dialog open={showNotificationDialog} onOpenChange={setShowNotificationDialog}>
+  1930→        <DialogContent className="max-w-md max-h-[80dvh]">
+  1931→          <DialogHeader>
+  1932→            <div className="flex items-center justify-between">
+  1933→              <DialogTitle>{t.notifications.notifications}</DialogTitle>
+  1934→              {unreadCount > 0 && (
+  1935→                <Button variant="ghost" size="sm" onClick={markAllAsRead}>
+  1936→                  {t.notifications.markAllRead}
+  1937→                </Button>
+  1938→              )}
+  1939→            </div>
+  1940→          </DialogHeader>
+  1941→          <ScrollArea className="max-h-80">
+  1942→            <div className="space-y-2">
+  1943→              {notifications.length === 0 ? (
+  1944→                <div className="text-center py-8 text-muted-foreground">
+  1945→                  <Bell className="h-8 w-8 mx-auto mb-2" />
+  1946→                  <p>{t.notifications.noNotifications}</p>
+  1947→                </div>
+  1948→              ) : (
+  1949→                notifications.map((notification) => (
+  1950→                  <div
+  1951→                    key={notification.id}
+  1952→                    onClick={() => markAsRead(notification.id)}
+  1953→                    className={`p-3 rounded-lg cursor-pointer transition-colors ${
+  1954→                      notification.read ? 'bg-muted/30' : 'bg-muted hover:bg-muted/80'
+  1955→                    }`}
+  1956→                  >
+  1957→                    <div className="flex items-start gap-3">
+  1958→                      <div className={`w-2 h-2 rounded-full mt-2 ${
+  1959→                        notification.read ? 'bg-transparent' : 'bg-emerald-500'
+  1960→                      }`} />
+  1961→                      <div className="flex-1">
+  1962→                        <p className="font-medium text-sm">{notification.title}</p>
+  1963→                        <p className="text-xs text-muted-foreground mt-1">{notification.body}</p>
+  1964→                        <p className="text-xs text-muted-foreground mt-1">
+  1965→                          {new Date(notification.createdAt).toLocaleString()}
+  1966→                        </p>
+  1967→                      </div>
+  1968→                    </div>
+  1969→                  </div>
+  1970→                ))
+  1971→              )}
+  1972→            </div>
+  1973→          </ScrollArea>
+  1974→        </DialogContent>
+  1975→      </Dialog>
+  1976→
+  1977→      {/* Leave History Dialog */}
+  1978→      <Dialog open={showLeaveHistoryDialog} onOpenChange={setShowLeaveHistoryDialog}>
+  1979→        <DialogContent className="max-w-2xl max-h-[90dvh]">
+  1980→          <DialogHeader>
+  1981→            <DialogTitle className="flex items-center gap-2">
+  1982→              <Calendar className="h-5 w-5 text-blue-500" />
+  1983→              {t.leave.leaveHistory}
+  1984→            </DialogTitle>
+  1985→          </DialogHeader>
+  1986→          
+  1987→          {/* Leave Balance Summary */}
+  1988→          <div className="grid grid-cols-3 gap-4 mb-4">
+  1989→            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg text-center">
+  1990→              <p className="text-2xl font-bold text-emerald-500">{TOTAL_LEAVES}</p>
+  1991→              <p className="text-xs text-muted-foreground">{t.leave.totalLeaves}</p>
+  1992→            </div>
+  1993→            <div className="p-3 bg-red-50 dark:bg-red-950/20 rounded-lg text-center">
+  1994→              <p className="text-2xl font-bold text-red-500">{approvedLeavesCount}</p>
+  1995→              <p className="text-xs text-muted-foreground">{t.leave.used}</p>
+  1996→            </div>
+  1997→            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg text-center">
+  1998→              <p className="text-2xl font-bold text-blue-500">{leavesLeft}</p>
+  1999→              <p className="text-xs text-muted-foreground">{t.leave.remaining}</p>
+  2000→            </div>
+
+[showing lines 1-2000 of 2382; use offset=2001 with limit to continue reading]

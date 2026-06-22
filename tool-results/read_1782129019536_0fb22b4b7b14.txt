@@ -1,0 +1,700 @@
+     1→'use client';
+     2→
+     3→import { useState, useRef, useCallback } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import { 
+     6→  User, Lock, Building, MapPin, FileText, ArrowLeft, ArrowRight, 
+     7→  AlertCircle, Loader2, Camera, Upload, X, Check, Eye, EyeOff,
+     8→  Crop, RotateCcw, ZoomIn, ZoomOut
+     9→} from 'lucide-react';
+    10→import { Button } from '@/components/ui/button';
+    11→import { Input } from '@/components/ui/input';
+    12→import { Label } from '@/components/ui/label';
+    13→import {
+    14→  Card,
+    15→  CardContent,
+    16→  CardDescription,
+    17→  CardHeader,
+    18→  CardTitle,
+    19→} from '@/components/ui/card';
+    20→import { ThemeToggle } from '@/components/theme-toggle';
+    21→import { useAuthStore } from '@/store/auth-store';
+    22→import { CameraCapture } from '@/components/camera-capture';
+    23→import { useLanguageStore } from '@/lib/i18n';
+    24→
+    25→interface AdminRegistrationProps {
+    26→  onBack: () => void;
+    27→  onRegistered: () => void;
+    28→  initialPhone: string;
+    29→}
+    30→
+    31→export function AdminRegistration({ onBack, onRegistered, initialPhone }: AdminRegistrationProps) {
+    32→  const { t } = useLanguageStore();
+    33→  const [step, setStep] = useState<1 | 2 | 3>(1);
+    34→  const [isLoading, setIsLoading] = useState(false);
+    35→  const [error, setError] = useState('');
+    36→  const { login } = useAuthStore();
+    37→  
+    38→  // Step 1: Basic Details
+    39→  const [formData, setFormData] = useState({
+    40→    name: '',
+    41→    phone: initialPhone,
+    42→    email: '',
+    43→    address: '',
+    44→    organizationName: '',
+    45→    organizationAddress: '',
+    46→    gst: '',
+    47→  });
+    48→  
+    49→  // Step 2: Profile Photo
+    50→  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+    51→  const [showImageEditor, setShowImageEditor] = useState(false);
+    52→  const [imageToEdit, setImageToEdit] = useState<string | null>(null);
+    53→  const [cropArea, setCropArea] = useState({ x: 0, y: 0, size: 100 });
+    54→  const [imageScale, setImageScale] = useState(1);
+    55→  const [showCameraCapture, setShowCameraCapture] = useState(false);
+    56→  const fileInputRef = useRef<HTMLInputElement>(null);
+    57→  const canvasRef = useRef<HTMLCanvasElement>(null);
+    58→  
+    59→  // Step 3: User ID & Password
+    60→  const [userId, setUserId] = useState('');
+    61→  const [password, setPassword] = useState('');
+    62→  const [confirmPassword, setConfirmPassword] = useState('');
+    63→  const [securityPassword, setSecurityPassword] = useState('');
+    64→  const [showPassword, setShowPassword] = useState(false);
+    65→
+    66→  const updateFormData = (field: string, value: string) => {
+    67→    setFormData(prev => ({ ...prev, [field]: value }));
+    68→    setError('');
+    69→  };
+    70→
+    71→  const formatPhone = (value: string) => {
+    72→    const numbers = value.replace(/\D/g, '');
+    73→    if (numbers.length <= 3) return numbers;
+    74→    if (numbers.length <= 6) return `${numbers.slice(0, 3)}-${numbers.slice(3)}`;
+    75→    return `${numbers.slice(0, 3)}-${numbers.slice(3, 6)}-${numbers.slice(6, 10)}`;
+    76→  };
+    77→
+    78→  // Step 1 Validation
+    79→  const validateStep1 = () => {
+    80→    if (!formData.name.trim()) {
+    81→      setError(t.orgSetup.validationAdminName);
+    82→      return false;
+    83→    }
+    84→    if (!formData.phone || formData.phone.length < 10) {
+    85→      setError(t.orgSetup.validationAdminPhone);
+    86→      return false;
+    87→    }
+    88→    if (!formData.organizationName.trim()) {
+    89→      setError(t.orgSetup.validationOrgName);
+    90→      return false;
+    91→    }
+    92→    if (!formData.organizationAddress.trim()) {
+    93→      setError(t.orgSetup.validationOrgAddress);
+    94→      return false;
+    95→    }
+    96→    return true;
+    97→  };
+    98→
+    99→  // Step 2: Image handling
+   100→  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+   101→    const file = e.target.files?.[0];
+   102→    if (file) {
+   103→      const reader = new FileReader();
+   104→      reader.onload = (event) => {
+   105→        const dataUrl = event.target?.result as string;
+   106→        setImageToEdit(dataUrl);
+   107→        setShowImageEditor(true);
+   108→        setCropArea({ x: 0, y: 0, size: 100 });
+   109→        setImageScale(1);
+   110→      };
+   111→      reader.readAsDataURL(file);
+   112→    }
+   113→  };
+   114→
+   115→  const handleCapturePhoto = () => {
+   116→    // Open the camera capture dialog
+   117→    setShowCameraCapture(true);
+   118→  };
+   119→
+   120→  const handleCameraCapture = (photo: string) => {
+   121→    // Set the captured photo directly
+   122→    setProfilePhoto(photo);
+   123→    setShowCameraCapture(false);
+   124→  };
+   125→
+   126→  const applyImageEdit = useCallback(() => {
+   127→    if (!imageToEdit || !canvasRef.current) return;
+   128→    
+   129→    const canvas = canvasRef.current;
+   130→    const ctx = canvas.getContext('2d');
+   131→    if (!ctx) return;
+   132→    
+   133→    const img = new Image();
+   134→    img.onload = () => {
+   135→      const outputSize = 200;
+   136→      canvas.width = outputSize;
+   137→      canvas.height = outputSize;
+   138→      
+   139→      const minDim = Math.min(img.width, img.height);
+   140→      const sx = cropArea.x * (img.width / 100);
+   141→      const sy = cropArea.y * (img.height / 100);
+   142→      const sSize = (cropArea.size / 100) * minDim;
+   143→      
+   144→      ctx.drawImage(img, sx, sy, sSize, sSize, 0, 0, outputSize, outputSize);
+   145→      
+   146→      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+   147→      setProfilePhoto(dataUrl);
+   148→      setShowImageEditor(false);
+   149→      setImageToEdit(null);
+   150→    };
+   151→    img.src = imageToEdit;
+   152→  }, [imageToEdit, cropArea]);
+   153→
+   154→  const cancelImageEdit = () => {
+   155→    setShowImageEditor(false);
+   156→    setImageToEdit(null);
+   157→  };
+   158→
+   159→  const removePhoto = () => {
+   160→    setProfilePhoto(null);
+   161→  };
+   162→
+   163→  // Step 3 Validation
+   164→  const validateStep3 = () => {
+   165→    if (!userId.trim()) {
+   166→      setError(t.orgSetup.validationUserIdRequired);
+   167→      return false;
+   168→    }
+   169→    if (userId.length < 4) {
+   170→      setError(t.employee.validationUserId);
+   171→      return false;
+   172→    }
+   173→    if (!password) {
+   174→      setError(t.orgSetup.validationPasswordRequired);
+   175→      return false;
+   176→    }
+   177→    if (password.length < 6) {
+   178→      setError(t.employee.validationPassword);
+   179→      return false;
+   180→    }
+   181→    if (password !== confirmPassword) {
+   182→      setError(t.orgSetup.validationPasswordsMatch);
+   183→      return false;
+   184→    }
+   185→    if (!securityPassword) {
+   186→      setError(t.orgSetup.validationSecurityPasswordRequired);
+   187→      return false;
+   188→    }
+   189→    if (securityPassword.length < 4) {
+   190→      setError(t.employee.validationSecurityPassword);
+   191→      return false;
+   192→    }
+   193→    return true;
+   194→  };
+   195→
+   196→  // Navigation between steps
+   197→  const goNext = () => {
+   198→    setError('');
+   199→    if (step === 1 && validateStep1()) {
+   200→      setStep(2);
+   201→    } else if (step === 2) {
+   202→      setStep(3);
+   203→      // Pre-fill userId from name
+   204→      if (!userId) {
+   205→        const baseUserId = formData.name.toLowerCase().replace(/\s+/g, '').slice(0, 8);
+   206→        setUserId(baseUserId + Math.floor(Math.random() * 1000));
+   207→      }
+   208→    }
+   209→  };
+   210→
+   211→  const goBack = () => {
+   212→    setError('');
+   213→    if (step === 1) {
+   214→      onBack();
+   215→    } else if (step === 2) {
+   216→      setStep(1);
+   217→    } else if (step === 3) {
+   218→      setStep(2);
+   219→    }
+   220→  };
+   221→
+   222→  // Final Registration
+   223→  const handleRegister = async () => {
+   224→    if (!validateStep3()) return;
+   225→    
+   226→    setIsLoading(true);
+   227→    setError('');
+   228→
+   229→    try {
+   230→      const response = await fetch('/api/auth/register', {
+   231→        method: 'POST',
+   232→        headers: { 'Content-Type': 'application/json' },
+   233→        body: JSON.stringify({
+   234→          userId,
+   235→          password,
+   236→          securityPassword,
+   237→          name: formData.name,
+   238→          phone: formData.phone.replace(/\D/g, ''),
+   239→          email: formData.email,
+   240→          address: formData.address,
+   241→          organizationName: formData.organizationName,
+   242→          organizationAddress: formData.organizationAddress,
+   243→          gst: formData.gst,
+   244→          profilePhoto,
+   245→        }),
+   246→      });
+   247→
+   248→      const data = await response.json();
+   249→
+   250→      if (!response.ok) {
+   251→        throw new Error(data.error || t.orgSetup.registrationFailed);
+   252→      }
+   253→
+   254→      // Login the user
+   255→      login({
+   256→        id: data.user.id,
+   257→        userId: data.user.userId,
+   258→        phone: data.user.phone,
+   259→        name: data.user.name,
+   260→        role: 'admin',
+   261→        organizationId: data.user.organizationId,
+   262→        organizationName: data.user.organizationName,
+   263→        email: data.user.email,
+   264→        profilePhoto: data.user.profilePhoto,
+   265→      });
+   266→
+   267→      setIsLoading(false);
+   268→      onRegistered();
+   269→
+   270→    } catch (err: unknown) {
+   271→      const errorMessage = err instanceof Error ? err.message : t.orgSetup.registrationFailedRetry;
+   272→      setError(errorMessage);
+   273→      setIsLoading(false);
+   274→    }
+   275→  };
+   276→
+   277→  return (
+   278→    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-muted/20">
+   279→      <div className="absolute top-4 right-4 z-10"><ThemeToggle /></div>
+   280→
+   281→      <div className="flex-1 flex flex-col items-center justify-center p-6">
+   282→        <motion.div 
+   283→          initial={{ opacity: 0, y: 20 }} 
+   284→          animate={{ opacity: 1, y: 0 }} 
+   285→          className="w-full max-w-md"
+   286→        >
+   287→          {/* Logo */}
+   288→          <div className="flex flex-col items-center mb-6">
+   289→            <motion.div 
+   290→              initial={{ scale: 0 }} 
+   291→              animate={{ scale: 1 }} 
+   292→              className="w-14 h-14 rounded-2xl overflow-hidden shadow-xl shadow-emerald-500/20 mb-3 bg-white"
+   293→            >
+   294→              <img src="/logo.jpg" alt="Logo" className="w-full h-full object-cover" />
+   295→            </motion.div>
+   296→            <h1 className="text-xl font-bold">{t.orgSetup.adminRegistration}</h1>
+   297→            <p className="text-muted-foreground text-sm mt-1">{t.orgSetup.createOrgAccount}</p>
+   298→          </div>
+   299→
+   300→          {/* Progress Steps */}
+   301→          <div className="flex items-center justify-center gap-2 mb-6">
+   302→            {[1, 2, 3].map((s) => (
+   303→              <div key={s} className="flex items-center">
+   304→                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+   305→                  step >= s 
+   306→                    ? 'bg-emerald-500 text-white' 
+   307→                    : 'bg-muted text-muted-foreground'
+   308→                }`}>
+   309→                  {step > s ? <Check className="h-4 w-4" /> : s}
+   310→                </div>
+   311→                {s < 3 && (
+   312→                  <div className={`w-8 h-0.5 mx-1 transition-all ${
+   313→                    step > s ? 'bg-emerald-500' : 'bg-muted'
+   314→                  }`} />
+   315→                )}
+   316→              </div>
+   317→            ))}
+   318→          </div>
+   319→
+   320→          {/* Step Labels */}
+   321→          <div className="flex justify-between text-xs text-muted-foreground mb-4 px-2">
+   322→            <span className={step >= 1 ? 'text-emerald-600 font-medium' : ''}>{t.orgSetup.stepDetails}</span>
+   323→            <span className={step >= 2 ? 'text-emerald-600 font-medium' : ''}>{t.orgSetup.stepPhoto}</span>
+   324→            <span className={step >= 3 ? 'text-emerald-600 font-medium' : ''}>{t.orgSetup.stepCredentials}</span>
+   325→          </div>
+   326→
+   327→          <Card className="border-0 shadow-2xl bg-card/50 backdrop-blur-sm">
+   328→            <CardHeader className="text-center pb-2">
+   329→              <CardTitle className="text-lg">
+   330→                {step === 1 && t.orgSetup.orgSetup}
+   331→                {step === 2 && t.orgSetup.profilePhoto}
+   332→                {step === 3 && t.orgSetup.setCredentials}
+   333→              </CardTitle>
+   334→              <CardDescription>
+   335→                {step === 1 && t.orgSetup.fillOrgInfo}
+   336→                {step === 2 && t.orgSetup.addProfilePhoto}
+   337→                {step === 3 && t.orgSetup.createLoginCredentials}
+   338→              </CardDescription>
+   339→            </CardHeader>
+   340→            <CardContent className="space-y-4">
+   341→              {/* Step 1: Details */}
+   342→              <AnimatePresence mode="wait">
+   343→                {step === 1 && (
+   344→                  <motion.div
+   345→                    key="step1"
+   346→                    initial={{ opacity: 0, x: -20 }}
+   347→                    animate={{ opacity: 1, x: 0 }}
+   348→                    exit={{ opacity: 0, x: 20 }}
+   349→                    className="space-y-4"
+   350→                  >
+   351→                    <div className="space-y-2">
+   352→                      <Label>{t.orgSetup.adminName} *</Label>
+   353→                      <Input 
+   354→                        placeholder={t.orgSetup.enterAdminName} 
+   355→                        value={formData.name} 
+   356→                        onChange={(e) => updateFormData('name', e.target.value)} 
+   357→                        className="h-11" 
+   358→                      />
+   359→                    </div>
+   360→                    <div className="space-y-2">
+   361→                      <Label>{t.orgSetup.adminPhone} *</Label>
+   362→                      <Input 
+   363→                        placeholder={t.orgSetup.enterAdminPhone} 
+   364→                        value={formatPhone(formData.phone)} 
+   365→                        onChange={(e) => updateFormData('phone', e.target.value.replace(/\D/g, ''))} 
+   366→                        className="h-11" 
+   367→                        maxLength={12} 
+   368→                      />
+   369→                    </div>
+   370→                    <div className="space-y-2">
+   371→                      <Label>{t.orgSetup.adminEmail}</Label>
+   372→                      <Input 
+   373→                        type="email" 
+   374→                        placeholder={t.orgSetup.enterAdminEmail} 
+   375→                        value={formData.email} 
+   376→                        onChange={(e) => updateFormData('email', e.target.value)} 
+   377→                        className="h-11" 
+   378→                      />
+   379→                    </div>
+   380→                    <div className="space-y-2">
+   381→                      <Label>{t.orgSetup.orgName} *</Label>
+   382→                      <div className="relative">
+   383→                        <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   384→                        <Input 
+   385→                          placeholder={t.orgSetup.enterOrgName} 
+   386→                          value={formData.organizationName} 
+   387→                          onChange={(e) => updateFormData('organizationName', e.target.value)} 
+   388→                          className="pl-10 h-11" 
+   389→                        />
+   390→                      </div>
+   391→                    </div>
+   392→                    <div className="space-y-2">
+   393→                      <Label>{t.orgSetup.orgAddress} *</Label>
+   394→                      <div className="relative">
+   395→                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   396→                        <Input 
+   397→                          placeholder={t.orgSetup.enterOrgAddress} 
+   398→                          value={formData.organizationAddress} 
+   399→                          onChange={(e) => updateFormData('organizationAddress', e.target.value)} 
+   400→                          className="pl-10 h-11" 
+   401→                        />
+   402→                      </div>
+   403→                    </div>
+   404→                    <div className="space-y-2">
+   405→                      <Label>{t.orgSetup.orgGst}</Label>
+   406→                      <div className="relative">
+   407→                        <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   408→                        <Input 
+   409→                          placeholder={t.orgSetup.enterGst} 
+   410→                          value={formData.gst} 
+   411→                          onChange={(e) => updateFormData('gst', e.target.value)} 
+   412→                          className="pl-10 h-11" 
+   413→                        />
+   414→                      </div>
+   415→                    </div>
+   416→                  </motion.div>
+   417→                )}
+   418→
+   419→                {/* Step 2: Profile Photo */}
+   420→                {step === 2 && (
+   421→                  <motion.div
+   422→                    key="step2"
+   423→                    initial={{ opacity: 0, x: -20 }}
+   424→                    animate={{ opacity: 1, x: 0 }}
+   425→                    exit={{ opacity: 0, x: 20 }}
+   426→                    className="space-y-4"
+   427→                  >
+   428→                    {!showImageEditor ? (
+   429→                      <>
+   430→                        {/* Current Photo Display */}
+   431→                        {profilePhoto ? (
+   432→                          <div className="flex flex-col items-center gap-4">
+   433→                            <div className="relative">
+   434→                              <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-emerald-500/30">
+   435→                                <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+   436→                              </div>
+   437→                              <button
+   438→                                onClick={removePhoto}
+   439→                                className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+   440→                              >
+   441→                                <X className="h-4 w-4" />
+   442→                              </button>
+   443→                            </div>
+   444→                            <p className="text-sm text-muted-foreground">{t.orgSetup.profilePhotoSet}</p>
+   445→                          </div>
+   446→                        ) : (
+   447→                          <div className="flex flex-col items-center gap-4 py-4">
+   448→                            <div className="w-32 h-32 rounded-full bg-muted flex items-center justify-center border-2 border-dashed border-muted-foreground/30">
+   449→                              <User className="h-12 w-12 text-muted-foreground/50" />
+   450→                            </div>
+   451→                            <p className="text-sm text-muted-foreground">{t.orgSetup.noProfilePhoto}</p>
+   452→                          </div>
+   453→                        )}
+   454→
+   455→                        {/* Upload/Capture Buttons */}
+   456→                        <div className="grid grid-cols-2 gap-3">
+   457→                          <Button
+   458→                            variant="outline"
+   459→                            onClick={() => fileInputRef.current?.click()}
+   460→                            className="h-16 flex-col"
+   461→                          >
+   462→                            <Upload className="h-5 w-5 mb-1" />
+   463→                            <span className="text-xs">{t.orgSetup.uploadPhoto}</span>
+   464→                          </Button>
+   465→                          <Button
+   466→                            variant="outline"
+   467→                            onClick={handleCapturePhoto}
+   468→                            className="h-16 flex-col"
+   469→                          >
+   470→                            <Camera className="h-5 w-5 mb-1" />
+   471→                            <span className="text-xs">{t.orgSetup.camera}</span>
+   472→                          </Button>
+   473→                        </div>
+   474→                        <input
+   475→                          ref={fileInputRef}
+   476→                          type="file"
+   477→                          accept="image/*"
+   478→                          onChange={handleImageSelect}
+   479→                          className="hidden"
+   480→                        />
+   481→                      </>
+   482→                    ) : (
+   483→                      /* Image Editor */
+   484→                      <div className="space-y-4">
+   485→                        <div className="relative w-full aspect-square bg-muted rounded-lg overflow-hidden">
+   486→                          {imageToEdit && (
+   487→                            <img 
+   488→                              src={imageToEdit} 
+   489→                              alt="Edit" 
+   490→                              className="w-full h-full object-cover"
+   491→                              style={{ transform: `scale(${imageScale})` }}
+   492→                            />
+   493→                          )}
+   494→                          {/* Crop overlay */}
+   495→                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+   496→                            <div className="w-32 h-32 border-2 border-white rounded-full bg-black/20" />
+   497→                          </div>
+   498→                        </div>
+   499→                        
+   500→                        {/* Editor Controls */}
+   501→                        <div className="flex justify-center gap-2">
+   502→                          <Button
+   503→                            variant="outline"
+   504→                            size="icon"
+   505→                            onClick={() => setImageScale(Math.max(0.5, imageScale - 0.1))}
+   506→                          >
+   507→                            <ZoomOut className="h-4 w-4" />
+   508→                          </Button>
+   509→                          <Button
+   510→                            variant="outline"
+   511→                            size="icon"
+   512→                            onClick={() => setImageScale(Math.min(2, imageScale + 0.1))}
+   513→                          >
+   514→                            <ZoomIn className="h-4 w-4" />
+   515→                          </Button>
+   516→                          <Button
+   517→                            variant="outline"
+   518→                            size="icon"
+   519→                            onClick={() => setImageScale(1)}
+   520→                          >
+   521→                            <RotateCcw className="h-4 w-4" />
+   522→                          </Button>
+   523→                        </div>
+   524→                        
+   525→                        <div className="flex gap-2">
+   526→                          <Button variant="outline" onClick={cancelImageEdit} className="flex-1">
+   527→                            {t.common.cancel}
+   528→                          </Button>
+   529→                          <Button onClick={applyImageEdit} className="flex-1 bg-emerald-500 hover:bg-emerald-600">
+   530→                            <Check className="h-4 w-4 mr-2" />
+   531→                            {t.orgSetup.apply}
+   532→                          </Button>
+   533→                        </div>
+   534→                      </div>
+   535→                    )}
+   536→                    
+   537→                    <canvas ref={canvasRef} className="hidden" />
+   538→                  </motion.div>
+   539→                )}
+   540→
+   541→                {/* Step 3: User ID & Password */}
+   542→                {step === 3 && (
+   543→                  <motion.div
+   544→                    key="step3"
+   545→                    initial={{ opacity: 0, x: -20 }}
+   546→                    animate={{ opacity: 1, x: 0 }}
+   547→                    exit={{ opacity: 0, x: 20 }}
+   548→                    className="space-y-4"
+   549→                  >
+   550→                    <div className="space-y-2">
+   551→                      <Label>{t.orgSetup.adminUserId} *</Label>
+   552→                      <div className="relative">
+   553→                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   554→                        <Input
+   555→                          placeholder={t.orgSetup.createUserId}
+   556→                          value={userId}
+   557→                          onChange={(e) => {
+   558→                            setUserId(e.target.value.toLowerCase().replace(/\s+/g, ''));
+   559→                            setError('');
+   560→                          }}
+   561→                          className="pl-10 h-11"
+   562→                        />
+   563→                      </div>
+   564→                      <p className="text-xs text-muted-foreground">{t.orgSetup.userIdMin4NoSpaces}</p>
+   565→                    </div>
+   566→                    
+   567→                    <div className="space-y-2">
+   568→                      <Label>{t.orgSetup.adminPassword} *</Label>
+   569→                      <div className="relative">
+   570→                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   571→                        <Input
+   572→                          type={showPassword ? 'text' : 'password'}
+   573→                          placeholder={t.orgSetup.createPassword}
+   574→                          value={password}
+   575→                          onChange={(e) => {
+   576→                            setPassword(e.target.value);
+   577→                            setError('');
+   578→                          }}
+   579→                          className="pl-10 pr-10 h-11"
+   580→                        />
+   581→                        <button
+   582→                          type="button"
+   583→                          onClick={() => setShowPassword(!showPassword)}
+   584→                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   585→                        >
+   586→                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   587→                        </button>
+   588→                      </div>
+   589→                      <p className="text-xs text-muted-foreground">{t.orgSetup.passwordMin6}</p>
+   590→                    </div>
+   591→                    
+   592→                    <div className="space-y-2">
+   593→                      <Label>{t.auth.confirmPassword} *</Label>
+   594→                      <div className="relative">
+   595→                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   596→                        <Input
+   597→                          type={showPassword ? 'text' : 'password'}
+   598→                          placeholder={t.orgSetup.confirmPasswordPlaceholder}
+   599→                          value={confirmPassword}
+   600→                          onChange={(e) => {
+   601→                            setConfirmPassword(e.target.value);
+   602→                            setError('');
+   603→                          }}
+   604→                          className="pl-10 h-11"
+   605→                        />
+   606→                      </div>
+   607→                    </div>
+   608→
+   609→                    <div className="space-y-2">
+   610→                      <Label>{t.orgSetup.adminSecurityPassword} *</Label>
+   611→                      <div className="relative">
+   612→                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   613→                        <Input
+   614→                          type="password"
+   615→                          placeholder={t.orgSetup.securityPasswordPlaceholder}
+   616→                          value={securityPassword}
+   617→                          onChange={(e) => {
+   618→                            setSecurityPassword(e.target.value);
+   619→                            setError('');
+   620→                          }}
+   621→                          className="pl-10 h-11"
+   622→                        />
+   623→                      </div>
+   624→                      <p className="text-xs text-muted-foreground">{t.orgSetup.securityPasswordHint}</p>
+   625→                    </div>
+   626→
+   627→                    {/* Preview */}
+   628→                    <div className="bg-muted/50 rounded-lg p-4 flex items-center gap-4">
+   629→                      {profilePhoto ? (
+   630→                        <img src={profilePhoto} alt="Preview" className="w-12 h-12 rounded-full object-cover" />
+   631→                      ) : (
+   632→                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+   633→                          <User className="h-6 w-6 text-muted-foreground" />
+   634→                        </div>
+   635→                      )}
+   636→                      <div>
+   637→                        <p className="font-medium">{formData.name}</p>
+   638→                        <p className="text-sm text-muted-foreground">@{userId || 'userid'}</p>
+   639→                      </div>
+   640→                    </div>
+   641→                  </motion.div>
+   642→                )}
+   643→              </AnimatePresence>
+   644→
+   645→              {/* Error Message */}
+   646→              {error && (
+   647→                <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+   648→                  <AlertCircle className="h-4 w-4 text-red-500" />
+   649→                  <p className="text-sm text-red-500">{error}</p>
+   650→                </div>
+   651→              )}
+   652→
+   653→              {/* Navigation Buttons */}
+   654→              <div className="flex gap-2 pt-2">
+   655→                <Button variant="ghost" onClick={goBack} className="flex-1">
+   656→                  <ArrowLeft className="h-4 w-4 mr-2" />
+   657→                  {step === 1 ? t.common.back : t.orgSetup.previous}
+   658→                </Button>
+   659→                {step < 3 ? (
+   660→                  <Button onClick={goNext} className="flex-1 bg-emerald-500 hover:bg-emerald-600">
+   661→                    {t.common.next}
+   662→                    <ArrowRight className="h-4 w-4 ml-2" />
+   663→                  </Button>
+   664→                ) : (
+   665→                  <Button 
+   666→                    onClick={handleRegister} 
+   667→                    disabled={isLoading}
+   668→                    className="flex-1 bg-emerald-500 hover:bg-emerald-600"
+   669→                  >
+   670→                    {isLoading ? (
+   671→                      <>
+   672→                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+   673→                        {t.orgSetup.creating}
+   674→                      </>
+   675→                    ) : (
+   676→                      t.auth.createAccount
+   677→                    )}
+   678→                  </Button>
+   679→                )}
+   680→              </div>
+   681→            </CardContent>
+   682→          </Card>
+   683→        </motion.div>
+   684→      </div>
+   685→      
+   686→      <div className="p-4 text-center">
+   687→        <p className="text-xs text-muted-foreground">{t.auth.copyright}</p>
+   688→      </div>
+   689→
+   690→      {/* Camera Capture Dialog */}
+   691→      <CameraCapture
+   692→        open={showCameraCapture}
+   693→        onCapture={handleCameraCapture}
+   694→        onClose={() => setShowCameraCapture(false)}
+   695→        title={t.orgSetup.captureProfilePhoto}
+   696→      />
+   697→    </div>
+   698→  );
+   699→}
+   700→
