@@ -275,10 +275,10 @@ export function AdminRegistration({ onBack, onRegistered, initialPhone }: AdminR
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-muted/20">
-      <div className="absolute top-4 right-4 z-10"><ThemeToggle /></div>
+    <div className="min-h-[100dvh] flex flex-col bg-gradient-to-br from-background via-background to-muted/20">
+      <div className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-10"><ThemeToggle /></div>
 
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
+      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
         <motion.div 
           initial={{ opacity: 0, y: 20 }} 
           animate={{ opacity: 1, y: 0 }} 
@@ -581,7 +581,7 @@ export function AdminRegistration({ onBack, onRegistered, initialPhone }: AdminR
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-foreground"
                         >
                           {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
@@ -683,7 +683,7 @@ export function AdminRegistration({ onBack, onRegistered, initialPhone }: AdminR
         </motion.div>
       </div>
       
-      <div className="p-4 text-center">
+      <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center">
         <p className="text-xs text-muted-foreground">{t.auth.copyright}</p>
       </div>
 

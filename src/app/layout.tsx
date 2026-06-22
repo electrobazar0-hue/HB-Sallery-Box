@@ -25,9 +25,6 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "default",
     title: "HB Sallery Box",
-    startupImage: [
-      { url: "/icons/icon-512x512.png", media: "(device-width: 320px)" }
-    ]
   },
   formatDetection: {
     telephone: true,
@@ -39,7 +36,7 @@ export const metadata: Metadata = {
     siteName: "HB Sallery Box",
     title: "HB Sallery Box - Smart Staff Management",
     description: "Complete staff management with attendance, salary, leave, and incentives",
-    images: [{ url: "/icons/icon-512x512.png", width: 512, height: 512 }]
+    images: [{ url: "/icon-512.png", width: 512, height: 512 }]
   },
   twitter: {
     card: "summary_large_image",
@@ -61,8 +58,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#10b981" },
     { media: "(prefers-color-scheme: dark)", color: "#0f0f23" }
@@ -78,18 +74,13 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* PWA Meta Tags */}
-        <link rel="icon" href="/logo.jpg" type="image/jpeg" />
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192x192.png" />
-        <link rel="apple-touch-icon" sizes="167x167" href="/icons/icon-192x192.png" />
-        
-        {/* iOS Splash Screens */}
+        <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+        <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
         <meta name="apple-touch-fullscreen" content="yes" />
-        
-        {/* Android Chrome */}
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
         
         {/* Preconnect for performance */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />

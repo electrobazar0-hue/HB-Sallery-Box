@@ -116,8 +116,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    overflow-x: hidden;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overflow-x-hidden;
   }
 }
 
@@ -212,14 +215,14 @@
   /* Dialog full screen on mobile */
   .dialog-mobile {
     max-width: 100vw;
-    max-height: 100vh;
+    max-height: 100dvh;
     border-radius: 0;
     margin: 0;
   }
   
-  /* Input styling for mobile */
+  /* Input styling for mobile - prevents iOS zoom on focus */
   input, textarea, select {
-    font-size: 16px !important; /* Prevents iOS zoom on focus */
+    font-size: 16px !important;
   }
   
   /* Prevent zoom on number inputs */
@@ -230,6 +233,15 @@
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+  }
+
+  /* Make DialogContent override for larger dialogs mobile-friendly */
+  [data-slot="dialog-content"][class*="max-w-2xl"],
+  [data-slot="dialog-content"][class*="max-w-3xl"],
+  [data-slot="dialog-content"][class*="max-w-4xl"],
+  [data-slot="dialog-content"][class*="max-w-5xl"] {
+    max-width: 100% !important;
+    width: 100% !important;
   }
 }
 

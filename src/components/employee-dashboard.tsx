@@ -853,7 +853,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
           </p>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="max-h-[60vh]">
+          <ScrollArea className="max-h-[60dvh]">
             <div className="space-y-4">
               {attendanceHistory.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -1039,7 +1039,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         </CardHeader>
         <CardContent>
           {/* Expense Summary */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
             <div className="p-4 bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-950/20 dark:to-orange-950/20 rounded-lg text-center border border-yellow-200 dark:border-yellow-800">
               <p className="text-3xl font-bold text-yellow-500">
                 {expenseRecords.filter(e => e.status === 'pending').length}
@@ -1060,7 +1060,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
             </div>
           </div>
 
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[50dvh]">
             <div className="space-y-3">
               {expenseRecords.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -1186,7 +1186,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
             </div>
           </div>
 
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[50dvh]">
             <div className="space-y-3">
               {incentiveRecords.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
@@ -1235,12 +1235,12 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-[100dvh] flex flex-col bg-background">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-sm">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSidebarOpen(true)}>
+            <Button variant="ghost" size="icon" className="md:hidden min-h-11 min-w-11" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-2">
@@ -1283,7 +1283,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
               className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setSidebarOpen(false)} />
             <motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r z-50 md:hidden">
+              className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r z-50 md:hidden pt-[env(safe-area-inset-top)]">
               <div className="p-4 border-b flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
@@ -1309,7 +1309,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                     <span>{item.label}</span>
                   </button>
                 ))}
-                <div className="pt-4 mt-4 border-t">
+                <div className="pt-4 mt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))]">
                   <button onClick={onLogout}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors">
                     <LogOut className="h-5 w-5" />
@@ -1359,8 +1359,8 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-          <div className="max-w-6xl mx-auto space-y-6">
+        <main className="flex-1 p-4 pb-24 md:pb-6 md:p-6 overflow-y-auto">
+          <div className="max-w-6xl mx-auto space-y-4 md:space-y-6">
             {activeTab === 'attendance' ? (
               renderAttendanceTab()
             ) : activeTab === 'expenses' ? (
@@ -1665,11 +1665,11 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden sticky bottom-0 border-t bg-background/95 backdrop-blur-sm">
+      <nav className="md:hidden sticky bottom-0 border-t bg-background/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]">
         <div className="flex justify-around py-2">
           {menuItems.slice(0, 4).map((item) => (
             <button key={item.id} onClick={() => handleMenuClick(item.id)}
-              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
+              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors min-h-[52px] ${
                 activeTab === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
               }`}>
               <item.icon className="h-5 w-5" />
@@ -1677,7 +1677,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
             </button>
           ))}
           <button onClick={() => setSidebarOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground">
+            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground min-h-[52px]">
             <Menu className="h-5 w-5" />
             <span className="text-xs">{t.dashboard.more}</span>
           </button>
@@ -1763,14 +1763,14 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       {/* Salary Dialog */}
       <Dialog open={showSalaryDialog} onOpenChange={setShowSalaryDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-emerald-500" />
               {t.salary.salaryHistory}
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[70dvh]">
             <div className="space-y-4">
               {/* Current Salary Info */}
               <Card className="border-0 shadow-md bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
@@ -1883,7 +1883,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                     {user?.name?.charAt(0) || 'E'}
                   </AvatarFallback>
                 </Avatar>
-                <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                <button className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center min-h-11 min-w-11">
                   <Camera className="h-4 w-4" />
                 </button>
               </div>
@@ -1927,7 +1927,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       {/* Notifications Dialog */}
       <Dialog open={showNotificationDialog} onOpenChange={setShowNotificationDialog}>
-        <DialogContent className="max-w-md max-h-[80vh]">
+        <DialogContent className="max-w-md max-h-[80dvh]">
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle>{t.notifications.notifications}</DialogTitle>
@@ -1976,7 +1976,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       {/* Leave History Dialog */}
       <Dialog open={showLeaveHistoryDialog} onOpenChange={setShowLeaveHistoryDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5 text-blue-500" />
@@ -1985,22 +1985,22 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
           </DialogHeader>
           
           {/* Leave Balance Summary */}
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg text-center">
-              <p className="text-2xl font-bold text-emerald-500">{TOTAL_LEAVES}</p>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
+            <div className="p-2 sm:p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg text-center">
+              <p className="text-xl sm:text-2xl font-bold text-emerald-500">{TOTAL_LEAVES}</p>
               <p className="text-xs text-muted-foreground">{t.leave.totalLeaves}</p>
             </div>
-            <div className="p-3 bg-red-50 dark:bg-red-950/20 rounded-lg text-center">
-              <p className="text-2xl font-bold text-red-500">{approvedLeavesCount}</p>
+            <div className="p-2 sm:p-3 bg-red-50 dark:bg-red-950/20 rounded-lg text-center">
+              <p className="text-xl sm:text-2xl font-bold text-red-500">{approvedLeavesCount}</p>
               <p className="text-xs text-muted-foreground">{t.leave.used}</p>
             </div>
-            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg text-center">
-              <p className="text-2xl font-bold text-blue-500">{leavesLeft}</p>
+            <div className="p-2 sm:p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg text-center">
+              <p className="text-xl sm:text-2xl font-bold text-blue-500">{leavesLeft}</p>
               <p className="text-xs text-muted-foreground">{t.leave.remaining}</p>
             </div>
           </div>
 
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[50dvh]">
             <div className="space-y-3">
               {leaveRecords.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -2111,7 +2111,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       {/* Incentive History Dialog */}
       <Dialog open={showIncentiveDialog} onOpenChange={setShowIncentiveDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Gift className="h-5 w-5 text-orange-500" />
@@ -2131,7 +2131,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
             </div>
           </div>
 
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[50dvh]">
             <div className="space-y-3">
               {incentiveRecords.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -2245,7 +2245,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       {/* Expense History Dialog */}
       <Dialog open={showExpenseHistoryDialog} onOpenChange={setShowExpenseHistoryDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
+        <DialogContent className="max-w-2xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-blue-500" />
@@ -2254,21 +2254,21 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
           </DialogHeader>
           
           {/* Expense Summary */}
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="p-4 bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-950/20 dark:to-orange-950/20 rounded-lg text-center border border-yellow-200 dark:border-yellow-800">
-              <p className="text-3xl font-bold text-yellow-500">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-4">
+            <div className="p-3 sm:p-4 bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-950/20 dark:to-orange-950/20 rounded-lg text-center border border-yellow-200 dark:border-yellow-800">
+              <p className="text-2xl sm:text-3xl font-bold text-yellow-500">
                 {expenseRecords.filter(e => e.status === 'pending').length}
               </p>
               <p className="text-sm text-muted-foreground">{t.leave.pending}</p>
             </div>
-            <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 rounded-lg text-center border border-emerald-200 dark:border-emerald-800">
-              <p className="text-3xl font-bold text-emerald-500">
+            <div className="p-3 sm:p-4 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/20 dark:to-teal-950/20 rounded-lg text-center border border-emerald-200 dark:border-emerald-800">
+              <p className="text-2xl sm:text-3xl font-bold text-emerald-500">
                 ₹{expenseRecords.filter(e => e.status === 'approved' || e.status === 'paid').reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
               </p>
               <p className="text-sm text-muted-foreground">{t.leave.approved}</p>
             </div>
-            <div className="p-4 bg-gradient-to-br from-red-50 to-pink-50 dark:from-red-950/20 dark:to-pink-950/20 rounded-lg text-center border border-red-200 dark:border-red-800">
-              <p className="text-3xl font-bold text-red-500">
+            <div className="p-3 sm:p-4 bg-gradient-to-br from-red-50 to-pink-50 dark:from-red-950/20 dark:to-pink-950/20 rounded-lg text-center border border-red-200 dark:border-red-800">
+              <p className="text-2xl sm:text-3xl font-bold text-red-500">
                 {expenseRecords.filter(e => e.status === 'rejected').length}
               </p>
               <p className="text-sm text-muted-foreground">{t.leave.rejected}</p>
@@ -2282,7 +2282,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
             </Button>
           </div>
 
-          <ScrollArea className="max-h-[50vh]">
+          <ScrollArea className="max-h-[50dvh]">
             <div className="space-y-3">
               {expenseRecords.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">

@@ -215,15 +215,15 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-muted/20">
+    <div className="min-h-[100dvh] flex flex-col bg-gradient-to-br from-background via-background to-muted/20">
       {/* Theme Toggle & Language Toggle */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+      <div className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-10 flex items-center gap-2">
         <LanguageToggle />
         <ThemeToggle />
       </div>
 
       {/* Network Status */}
-      <div className="absolute top-4 left-4 z-10">
+      <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-4 z-10">
         {isOnline ? (
           <div className="flex items-center gap-1 text-xs text-emerald-500">
             <Wifi className="h-3 w-3" />
@@ -366,7 +366,7 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-muted-foreground hover:text-foreground"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -444,7 +444,7 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
       </div>
 
       {/* Footer */}
-      <div className="p-4 text-center">
+      <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center">
         <p className="text-xs text-muted-foreground">
           {t.auth.copyright}
         </p>

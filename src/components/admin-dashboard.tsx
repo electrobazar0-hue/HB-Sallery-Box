@@ -761,12 +761,12 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   }, [showIncentives, user?.organizationId]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-[100dvh] flex flex-col bg-background">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-sm">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setSidebarOpen(true)}>
+            <Button variant="ghost" size="icon" className="md:hidden min-h-11 min-w-11" onClick={() => setSidebarOpen(true)}>
               <Menu className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-2">
@@ -826,7 +826,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
               className="fixed inset-0 bg-black/50 z-50 md:hidden" onClick={() => setSidebarOpen(false)} />
             <motion.aside initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r z-50 md:hidden">
+              className="fixed left-0 top-0 bottom-0 w-[280px] bg-background border-r z-50 md:hidden pt-[env(safe-area-inset-top)]">
               <div className="p-4 border-b flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
@@ -852,7 +852,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                     <span>{item.label}</span>
                   </button>
                 ))}
-                <div className="pt-4 mt-4 border-t">
+                <div className="pt-4 mt-4 border-t pb-[max(1rem,env(safe-area-inset-bottom))]">
                   <button onClick={onLogout}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors">
                     <LogOut className="h-5 w-5" />
@@ -906,8 +906,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
-          <div className="max-w-6xl mx-auto space-y-6">
+        <main className="flex-1 p-4 pb-6 md:p-6 overflow-y-auto">
+          <div className="max-w-6xl mx-auto space-y-4 md:space-y-6">
             {/* Welcome Section */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
               className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -980,11 +980,11 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       </div>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden sticky bottom-0 border-t bg-background/95 backdrop-blur-sm">
+      <nav className="md:hidden sticky bottom-0 border-t bg-background/95 backdrop-blur-sm pb-[env(safe-area-inset-bottom)]">
         <div className="flex justify-around py-2">
           {menuItems.slice(0, 4).map((item) => (
             <button key={item.id} onClick={() => handleMenuClick(item.id)}
-              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${
+              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors min-h-[52px] ${
                 activeTab === item.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'
               }`}>
               <item.icon className="h-5 w-5" />
@@ -992,7 +992,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
             </button>
           ))}
           <button onClick={() => setSidebarOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground">
+            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground min-h-[52px]">
             <Menu className="h-5 w-5" />
             <span className="text-xs">{t.dashboard.more}</span>
           </button>
@@ -1011,9 +1011,9 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           }); 
         }
       }}>
-        <DialogContent className="max-w-lg max-h-[90vh]">
+        <DialogContent className="max-w-lg max-h-[90dvh]">
           <DialogHeader><DialogTitle>{editingEmployee ? t.employee.editEmployee : t.employee.addNewEmployee}</DialogTitle></DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[70dvh]">
           <div className="space-y-4 pr-4">
             <div className="space-y-2">
               <Label>{t.employee.nameRequired}</Label>
@@ -1138,7 +1138,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Employee List Dialog */}
       <Dialog open={showEmployeeList} onOpenChange={setShowEmployeeList}>
-        <DialogContent className="max-w-4xl max-h-[90vh] w-[95vw] sm:w-full p-0 gap-0">
+        <DialogContent className="max-w-4xl max-h-[90dvh] w-[95vw] sm:w-full p-0 gap-0">
           <DialogHeader className="p-4 border-b sticky top-0 bg-background z-10">
             <DialogTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <span>{t.dashboard.employees} ({employees.length})</span>
@@ -1147,7 +1147,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
               </Button>
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh] sm:max-h-[75vh]">
+          <ScrollArea className="max-h-[70dvh] sm:max-h-[75dvh]">
             <div className="p-4">
               {employees.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -1301,7 +1301,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Attendance Dialog */}
       <Dialog open={showAttendance} onOpenChange={setShowAttendance}>
-        <DialogContent className="max-w-2xl max-h-[80vh]">
+        <DialogContent className="max-w-2xl max-h-[80dvh]">
           <DialogHeader><DialogTitle>{t.dashboard.todayAttendance}</DialogTitle></DialogHeader>
           <ScrollArea className="max-h-80">
             <div className="space-y-2">
@@ -1332,7 +1332,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Leave Requests Dialog */}
       <Dialog open={showLeaves} onOpenChange={setShowLeaves}>
-        <DialogContent className="max-w-md max-h-[80vh]">
+        <DialogContent className="max-w-md max-h-[80dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>{t.leave.pendingApproval}</span>
@@ -1430,7 +1430,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* All Leaves Tracking Dialog */}
       <Dialog open={showAllLeaves} onOpenChange={setShowAllLeaves}>
-        <DialogContent className="max-w-3xl max-h-[90vh]">
+        <DialogContent className="max-w-3xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5 text-emerald-500" />
@@ -1457,7 +1457,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
             ))}
           </div>
 
-          <ScrollArea className="max-h-[60vh]">
+          <ScrollArea className="max-h-[60dvh]">
             <div className="space-y-3">
               {filteredLeaves.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -1524,9 +1524,9 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Shift Management Dialog */}
       <Dialog open={showShiftManagement} onOpenChange={setShowShiftManagement}>
-        <DialogContent className="max-w-3xl max-h-[90vh]">
+        <DialogContent className="max-w-3xl max-h-[90dvh]">
           <DialogHeader><DialogTitle>{t.shift.shiftManagement}</DialogTitle></DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[70dvh]">
             <ShiftManagement organizationId={user?.organizationId || ''} />
           </ScrollArea>
         </DialogContent>
@@ -1534,14 +1534,14 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Employee Activities Dialog */}
       <Dialog open={showEmployeeActivities} onOpenChange={setShowEmployeeActivities}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-4xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-emerald-500" />
               {t.dashboard.employeeActivities}
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[75vh]">
+          <ScrollArea className="max-h-[75dvh]">
             <EmployeeActivities organizationId={user?.organizationId || ''} />
           </ScrollArea>
         </DialogContent>
@@ -1549,9 +1549,9 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Salary Management Dialog */}
       <Dialog open={showSalaryManagement} onOpenChange={setShowSalaryManagement}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-4xl max-h-[90dvh]">
           <DialogHeader><DialogTitle>{t.salary.salaryManagement}</DialogTitle></DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[70dvh]">
             <div className="space-y-4">
               <Card className="border-0 shadow-md">
                 <CardHeader className="pb-2"><CardTitle className="text-base">{t.salary.salaryFormula}</CardTitle></CardHeader>
@@ -1615,7 +1615,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Notifications Dialog */}
       <Dialog open={showNotifications} onOpenChange={setShowNotifications}>
-        <DialogContent className="max-w-md max-h-[80vh]">
+        <DialogContent className="max-w-md max-h-[80dvh]">
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle>{t.notifications.notifications}</DialogTitle>
@@ -1670,14 +1670,14 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Holiday Management Dialog */}
       <Dialog open={showHolidayManagement} onOpenChange={setShowHolidayManagement}>
-        <DialogContent className="max-w-5xl max-h-[90vh]">
+        <DialogContent className="max-w-5xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PartyPopper className="h-5 w-5 text-emerald-500" />
               {t.holiday.holidayManagement}
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[80vh]">
+          <ScrollArea className="max-h-[80dvh]">
             <HolidayManagement 
               organizationId={user?.organizationId || ''} 
               adminId={user?.id || ''} 
@@ -1688,7 +1688,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Incentives Management Dialog */}
       <Dialog open={showIncentives} onOpenChange={setShowIncentives}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-4xl max-h-[90dvh]">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2">
@@ -1700,7 +1700,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
               </Button>
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh]">
+          <ScrollArea className="max-h-[70dvh]">
             <div className="space-y-4">
               {/* Incentive Summary */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1778,7 +1778,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           </DialogHeader>
           
           {!incentiveEmployee ? (
-            <ScrollArea className="max-h-[60vh]">
+            <ScrollArea className="max-h-[60dvh]">
               <div className="space-y-2">
                 {employees.map((emp) => (
                   <button

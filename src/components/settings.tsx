@@ -179,7 +179,7 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-[100dvh] bg-background">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/80 backdrop-blur-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -194,7 +194,7 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
       </header>
 
       {/* Content */}
-      <div className="p-4 max-w-lg mx-auto space-y-6">
+      <div className="p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] max-w-lg mx-auto space-y-6">
         {/* Profile Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
