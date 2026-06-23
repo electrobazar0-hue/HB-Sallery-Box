@@ -140,6 +140,26 @@ interface IncentiveRecord {
   month?: string;
 }
 
+interface EmployeeEvent {
+  employee: {
+    id: string;
+    name: string;
+    designation?: string;
+    department?: string;
+    profilePhoto?: string;
+  };
+  date: string;
+  type: 'birthday' | 'work-anniversary';
+  years: number;
+  daysAway: number;
+}
+
+interface EmployeeEventsData {
+  success: boolean;
+  today: { birthdays: EmployeeEvent[]; anniversaries: EmployeeEvent[] };
+  upcoming: { birthdays: EmployeeEvent[]; anniversaries: EmployeeEvent[] };
+}
+
 export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const { user, updateUser, updateOrganizationLogo } = useAuthStore();
   const { t } = useLanguageStore();
@@ -163,6 +183,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const [showEmployeeActivities, setShowEmployeeActivities] = useState(false);
   const [showHolidayManagement, setShowHolidayManagement] = useState(false);
   const [showEmployeeList, setShowEmployeeList] = useState(false);
+  const [employeeEvents, setEmployeeEvents] = useState<EmployeeEventsData | null>(null);
   const [showPaySalary, setShowPaySalary] = useState(false);
   const [showIncentives, setShowIncentives] = useState(false);
   const [showAllLeaves, setShowAllLeaves] = useState(false);
@@ -302,6 +323,25 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     
     return () => { mounted = false; };
   }, [isAdmin, user?.id, user?.organizationId]);
+
+  // Fetch employee events (birthdays/anniversaries) when employee list opens
+  useEffect(() => {
+    if (!showEmployeeList || !user?.organizationId) return;
+    let mounted = true;
+    const fetchEvents = async () => {
+      try {
+        const response = await fetch(`/api/employees/events?organizationId=${user.organizationId}`);
+        const data = await response.json();
+        if (mounted && data.success) {
+          setEmployeeEvents(data);
+        }
+      } catch (error) {
+        console.error('Error fetching employee events:', error);
+      }
+    };
+    fetchEvents();
+    return () => { mounted = false; };
+  }, [showEmployeeList, user?.organizationId]);
 
   const handleAddEmployee = async () => {
     // Validation with detailed error messages
@@ -1149,6 +1189,98 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           </DialogHeader>
           <ScrollArea className="max-h-[70dvh] sm:max-h-[75dvh]">
             <div className="p-4">
+              {/* 🎂 Upcoming Birthdays & Anniversaries */}
+              {employeeEvents && (() => {
+                const todayAll = [...(employeeEvents.today.anniversaries), ...(employeeEvents.today.birthdays)];
+                const upcomingAll = [...(employeeEvents.upcoming.anniversaries), ...(employeeEvents.upcoming.birthdays)]
+                  .sort((a, b) => a.daysAway - b.daysAway);
+                const allEvents = [...todayAll, ...upcomingAll];
+
+                if (allEvents.length === 0 && !employeeEvents.today.birthdays.length) {
+                  return (
+                    <div className="mb-4 p-3 rounded-xl bg-muted/50 border border-dashed text-center">
+                      <p className="text-sm text-muted-foreground">
+                        🎂 No upcoming birthdays or anniversaries in the next 30 days
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Add employee date of birth in employee edit form to see birthdays here
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="mb-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-base">🎂</span>
+                      <h3 className="text-sm font-semibold text-foreground">Upcoming Birthdays & Anniversaries</h3>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
+                      {allEvents.map((event, idx) => {
+                        const isBirthday = event.type === 'birthday';
+                        const isToday = event.daysAway === 0;
+                        const eventDate = new Date(event.date + 'T00:00:00');
+                        const dateStr = eventDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+                        return (
+                          <div
+                            key={`${event.employee.id}-${event.type}-${idx}`}
+                            className={`flex-shrink-0 w-52 rounded-xl p-3 border ${
+                              isBirthday
+                                ? 'bg-gradient-to-br from-orange-50 to-pink-50 dark:from-orange-950/40 dark:to-pink-950/40 border-orange-200/60 dark:border-orange-800/40'
+                                : 'bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border-emerald-200/60 dark:border-emerald-800/40'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Avatar className="h-9 w-9">
+                                <AvatarImage src={event.employee.profilePhoto} />
+                                <AvatarFallback className={`text-white text-sm ${
+                                  isBirthday
+                                    ? 'bg-gradient-to-br from-orange-400 to-pink-500'
+                                    : 'bg-gradient-to-br from-emerald-400 to-teal-600'
+                                }`}>
+                                  {event.employee.name.charAt(0)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium truncate leading-tight">{event.employee.name}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-xs text-muted-foreground">{isBirthday ? '🎂' : '🎊'} {dateStr}</span>
+                                  {!isBirthday && event.years > 0 && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium">
+                                      {event.years}yr{event.years > 1 ? 's' : ''}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-2 flex items-center justify-between">
+                              <span className="text-[11px] text-muted-foreground">
+                                {isBirthday ? 'Birthday' : `Work Anniversary`}
+                              </span>
+                              {isToday ? (
+                                <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] px-1.5 py-0 h-4">
+                                  Today!
+                                </Badge>
+                              ) : (
+                                <span className="text-[11px] font-medium text-muted-foreground">
+                                  {event.daysAway === 1 ? 'Tomorrow' : `in ${event.daysAway} days`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!employeeEvents.today.birthdays.length && employeeEvents.upcoming.birthdays.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground mt-2 text-center">
+                        💡 Add employee date of birth in employee edit form to see birthdays here
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
               {employees.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />

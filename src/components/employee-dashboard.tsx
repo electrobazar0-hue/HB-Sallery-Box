@@ -123,6 +123,8 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   const [showSalaryDialog, setShowSalaryDialog] = useState(false);
   const [showProfileDialog, setShowProfileDialog] = useState(false);
   const [showNotificationDialog, setShowNotificationDialog] = useState(false);
+  const [showHolidayDialog, setShowHolidayDialog] = useState(false);
+  const [publishedHolidays, setPublishedHolidays] = useState<HolidayRecord[]>([]);
   const [showCamera, setShowCamera] = useState(false);
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
@@ -831,6 +833,13 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       onSettings();
     } else if (id === 'leaves') {
       setShowLeaveDialog(true);
+    } else if (id === 'holidays') {
+      setShowHolidayDialog(true);
+      if (user?.organizationId) {
+        fetch(`/api/holidays?organizationId=${user.organizationId}&status=active`).then(r => r.json()).then(d => {
+          if (d.success) setPublishedHolidays(d.holidays || []);
+        }).catch(() => {});
+      }
     } else if (id === 'salary') {
       setShowSalaryDialog(true);
     } else {
@@ -1694,6 +1703,58 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         }}
         title={pendingPunchType === 'in' ? `📸 ${t.attendance.capturePunchInSelfie}` : `📸 ${t.attendance.capturePunchOutSelfie}`}
       />
+
+      {/* Holiday Dialog - Shows only PUBLISHED holidays */}
+      <Dialog open={showHolidayDialog} onOpenChange={setShowHolidayDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <PartyPopper className="h-5 w-5 text-emerald-500" />
+              {t.dashboard.holidays}
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70dvh]">
+            {publishedHolidays.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Calendar className="h-8 w-8 mx-auto mb-2" />
+                <p className="text-sm">No holidays published yet</p>
+                <p className="text-xs mt-1">Admin will publish holidays soon</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {publishedHolidays
+                  .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                  .map((h) => {
+                    const isPast = new Date(h.date) < new Date(new Date().toDateString());
+                    const isToday = h.date === new Date().toISOString().split('T')[0];
+                    return (
+                      <div key={h.id} className={`flex items-center gap-3 p-3 rounded-lg ${isPast ? 'bg-muted/30 opacity-60' : 'bg-muted/50'}`}>
+                        <div className={`w-12 h-12 rounded-lg flex flex-col items-center justify-center text-white shrink-0 ${
+                          isToday ? 'bg-gradient-to-br from-emerald-400 to-teal-500' :
+                          h.holidayType === 'national' ? 'bg-gradient-to-br from-orange-400 to-red-500' :
+                          'bg-gradient-to-br from-purple-400 to-pink-500'
+                        }`}>
+                          <span className="text-[10px] leading-none">{new Date(h.date).toLocaleDateString('en-US', { month: 'short' })}</span>
+                          <span className="text-lg font-bold leading-none">{new Date(h.date).getDate()}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{h.holidayName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(h.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {isToday && <Badge className="bg-emerald-500 text-white text-[10px] px-1.5">Today!</Badge>}
+                          <Badge variant="outline" className="text-[10px]">{h.holidayType}</Badge>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
       {/* Photo View Dialog */}
       <Dialog open={showPhotoDialog} onOpenChange={setShowPhotoDialog}>

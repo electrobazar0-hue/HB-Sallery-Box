@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// Fallback: Static Indian Holidays (used when API fails)
+// Fallback: Static Indian Holidays
 const FALLBACK_HOLIDAYS: Record<string, Array<{ date: string; name: string; type: string }>> = {
   '2025': [
     { date: '2025-01-01', name: "New Year's Day", type: 'company' },
@@ -50,8 +50,17 @@ const FALLBACK_HOLIDAYS: Record<string, Array<{ date: string; name: string; type
   ],
 };
 
-// Google Calendar - Indian Holidays public calendar
 const GOOGLE_CALENDAR_ID = 'en.indian#holiday@group.v.calendar.google.com';
+
+interface NagerDateHoliday {
+  date: string;
+  localName: string;
+  name: string;
+  countryCode: string;
+  fixed: boolean;
+  global: boolean;
+  types: string[];
+}
 
 interface GoogleCalendarEvent {
   id?: string;
@@ -61,121 +70,112 @@ interface GoogleCalendarEvent {
   end: { date?: string; dateTime?: string };
 }
 
-// Determine holiday type from description/name
-function classifyHolidayType(summary: string, description?: string): string {
-  const desc = (description || '').toLowerCase();
-  const name = summary.toLowerCase();
-  
-  // National holidays
+function classifyHolidayType(name: string): string {
+  const lower = name.toLowerCase();
   const nationalKeywords = ['republic day', 'independence day', 'gandhi jayanti'];
-  if (nationalKeywords.some(k => name.includes(k))) return 'national';
+  if (nationalKeywords.some(k => lower.includes(k))) return 'national';
   
-  // Festival holidays
   const festivalKeywords = ['holi', 'diwali', 'eid', 'christmas', 'dussehra', 'navratri', 
     'janmashtami', 'ganesh', 'ram navami', 'pongal', 'sankranti', 'buddha', 'shivaratri',
     'bakri', 'muharram', 'guru', 'raksha', 'lohri', 'baisakhi', 'vaisakhi', 'onam',
-    'bhai', 'govardhan', 'makar', 'christmas', 'easter', 'good friday', 'ambedkar'];
-  if (festivalKeywords.some(k => name.includes(k))) return 'festival';
+    'bhai', 'govardhan', 'makar', 'easter', 'good friday', 'ambedkar'];
+  if (festivalKeywords.some(k => lower.includes(k))) return 'festival';
   
-  // Weekly offs
-  if (name.includes('sunday') || name.includes('saturday')) return 'weekly';
+  if (lower.includes('sunday') || lower.includes('saturday')) return 'weekly';
   
-  // If description says "Observance" it's not a gazetted holiday
-  if (desc.includes('observance')) return 'company';
-  
-  // Default
   return 'festival';
 }
 
-// Fetch holidays from Google Calendar API
-async function fetchGoogleCalendarHolidays(year: number): Promise<GoogleCalendarEvent[]> {
-  const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error('Google Calendar API key not configured');
+// Source 1: Nager.Date API (Free, No API Key)
+async function fetchNagerDateHolidays(year: number): Promise<Array<{ date: string; name: string; type: string }>> {
+  try {
+    const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/IN`, {
+      next: { revalidate: 86400 },
+    });
+    if (!response.ok) throw new Error(`Nager.Date returned ${response.status}`);
+    const data: NagerDateHoliday[] = await response.json();
+    return data
+      .filter(h => h.global) // Only national/global holidays
+      .map(h => ({
+        date: h.date,
+        name: h.localName || h.name,
+        type: classifyHolidayType(h.name),
+      }));
+  } catch (err) {
+    console.warn('Nager.Date API failed:', err);
+    return [];
   }
-
-  const calendarId = encodeURIComponent(GOOGLE_CALENDAR_ID);
-  const timeMin = `${year}-01-01T00:00:00Z`;
-  const timeMax = `${year}-12-31T23:59:59Z`;
-  
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?key=${apiKey}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&maxResults=100&orderBy=startTime`;
-  
-  const response = await fetch(url, {
-    next: { revalidate: 86400 }, // Cache for 24 hours
-  });
-
-  if (!response.ok) {
-    const errorData = await response.text();
-    console.error('Google Calendar API error:', errorData);
-    throw new Error(`Google Calendar API returned ${response.status}`);
-  }
-
-  const data = await response.json();
-  
-  if (!data.items || !Array.isArray(data.items)) {
-    throw new Error('Invalid response from Google Calendar API');
-  }
-
-  return data.items;
 }
 
-// Sync holidays from Google Calendar into database
+// Source 2: Google Calendar API (Needs API Key)
+async function fetchGoogleCalendarHolidays(year: number): Promise<Array<{ date: string; name: string; type: string }>> {
+  const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
+  if (!apiKey) throw new Error('No API key');
+
+  const calendarId = encodeURIComponent(GOOGLE_CALENDAR_ID);
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?key=${apiKey}&timeMin=${year}-01-01T00:00:00Z&timeMax=${year}-12-31T23:59:59Z&singleEvents=true&maxResults=100&orderBy=startTime`;
+
+  const response = await fetch(url, { next: { revalidate: 86400 } });
+  if (!response.ok) throw new Error(`Google Calendar API returned ${response.status}`);
+  const data = await response.json();
+  if (!data.items) throw new Error('No items');
+
+  return data.items
+    .map((event: GoogleCalendarEvent) => ({
+      date: event.start?.date || event.start?.dateTime?.split('T')[0] || '',
+      name: event.summary || 'Unknown Holiday',
+      type: classifyHolidayType(event.summary),
+    }))
+    .filter(h => h.date);
+}
+
+// Sync holidays from APIs into database (all as DRAFT)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { organizationId, adminId, year: yearParam } = body;
 
     if (!organizationId || !adminId) {
-      return NextResponse.json({
-        success: false,
-        error: 'Organization ID and Admin ID are required',
-      }, { status: 400 });
-    }
-
-    const organization = await db.organization.findUnique({
-      where: { id: organizationId },
-    });
-
-    if (!organization) {
-      return NextResponse.json({
-        success: false,
-        error: 'Organization not found',
-      }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Organization ID and Admin ID required' }, { status: 400 });
     }
 
     const currentYear = yearParam || new Date().getFullYear();
-    
-    let holidays: Array<{ date: string; name: string; type: string; source: string }>;
-    let source = 'fallback';
+    let holidays: Array<{ date: string; name: string; type: string }> = [];
+    let source = 'none';
 
-    // Try Google Calendar API first
-    try {
-      const googleEvents = await fetchGoogleCalendarHolidays(currentYear);
-      
-      if (googleEvents.length > 0) {
-        holidays = googleEvents.map((event) => ({
-          date: event.start?.date || event.start?.dateTime?.split('T')[0] || '',
-          name: event.summary || 'Unknown Holiday',
-          type: classifyHolidayType(event.summary, event.description),
-          source: 'google-calendar',
-        })).filter(h => h.date); // Filter out events without valid dates
-        
-        source = 'google-calendar';
-        console.log(`Fetched ${holidays.length} holidays from Google Calendar for ${currentYear}`);
-      } else {
-        throw new Error('No events returned');
+    // Try Google Calendar first (if API key set)
+    const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
+    if (apiKey) {
+      try {
+        holidays = await fetchGoogleCalendarHolidays(currentYear);
+        if (holidays.length > 0) {
+          source = 'google-calendar';
+          console.log(`✅ Fetched ${holidays.length} holidays from Google Calendar`);
+        }
+      } catch (err) {
+        console.warn('Google Calendar failed:', err);
       }
-    } catch (apiError) {
-      console.warn('Google Calendar API failed, using fallback:', apiError);
-      
-      // Fallback to static data
+    }
+
+    // Fallback to Nager.Date
+    if (holidays.length === 0) {
+      try {
+        holidays = await fetchNagerDateHolidays(currentYear);
+        if (holidays.length > 0) {
+          source = 'nager-date';
+          console.log(`✅ Fetched ${holidays.length} holidays from Nager.Date`);
+        }
+      } catch (err) {
+        console.warn('Nager.Date failed:', err);
+      }
+    }
+
+    // Final fallback to static database
+    if (holidays.length === 0) {
       const fallbackList = FALLBACK_HOLIDAYS[String(currentYear)] || FALLBACK_HOLIDAYS['2025'];
-      holidays = fallbackList.map(h => ({
-        ...h,
-        source: 'static-database',
-      }));
+      holidays = fallbackList.map(h => ({ ...h }));
       source = 'static-database';
+      console.log(`✅ Using ${holidays.length} static holidays`);
     }
 
     let added = 0;
@@ -185,12 +185,7 @@ export async function POST(request: NextRequest) {
     for (const holiday of holidays) {
       try {
         const existing = await db.holiday.findUnique({
-          where: {
-            organizationId_date: {
-              organizationId,
-              date: holiday.date,
-            },
-          },
+          where: { organizationId_date: { organizationId, date: holiday.date } },
         });
 
         if (existing) {
@@ -204,17 +199,25 @@ export async function POST(request: NextRequest) {
             holidayName: holiday.name,
             date: holiday.date,
             holidayType: holiday.type,
-            description: `Synced from ${source === 'google-calendar' ? 'Google Calendar' : 'Static Database'}`,
+            description: `Synced from ${source === 'google-calendar' ? 'Google Calendar' : source === 'nager-date' ? 'Nager.Date API' : 'Offline Database'}`,
             createdBy: adminId,
+            status: 'draft', // ALL synced holidays start as DRAFT
+            syncSource: source,
+            isPaid: true,
           },
         });
-
         added++;
       } catch (err) {
         console.error('Error saving holiday:', err);
         errors++;
       }
     }
+
+    const sourceLabels: Record<string, string> = {
+      'google-calendar': `Google Calendar (Live)`,
+      'nager-date': `Nager.Date API (Live)`,
+      'static-database': `Offline Database (Static)`,
+    };
 
     return NextResponse.json({
       success: true,
@@ -223,55 +226,48 @@ export async function POST(request: NextRequest) {
       errors,
       total: holidays.length,
       source,
+      sourceLabel: sourceLabels[source] || source,
       year: currentYear,
-      message: source === 'google-calendar'
-        ? `Synced ${added} holidays from Google Calendar (${skipped} already existed)`
-        : `Synced ${added} holidays from offline database (${skipped} already existed). Set GOOGLE_CALENDAR_API_KEY for live data.`,
+      message: `${added} new holidays added as draft, ${skipped} already existed`,
     });
-
   } catch (error) {
     console.error('Holiday sync error:', error);
-    return NextResponse.json({
-      success: false,
-      error: 'Failed to sync holidays',
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to sync holidays' }, { status: 500 });
   }
 }
 
-// Get holidays (from Google Calendar or fallback)
+// GET - Preview holidays before syncing
 export async function GET(request: NextRequest) {
   const yearParam = request.nextUrl.searchParams.get('year');
   const year = yearParam ? parseInt(yearParam) : new Date().getFullYear();
-  
-  let holidays: Array<{ summary: string; start: { date: string }; end: { date: string }; type: string }>;
-  let source = 'fallback';
 
-  // Try Google Calendar API first
-  try {
-    const googleEvents = await fetchGoogleCalendarHolidays(year);
-    
-    if (googleEvents.length > 0) {
-      holidays = googleEvents.map((event) => ({
-        summary: event.summary || 'Unknown Holiday',
-        start: { date: event.start?.date || event.start?.dateTime?.split('T')[0] || '' },
-        end: { date: event.end?.date || event.end?.dateTime?.split('T')[0] || '' },
-        type: classifyHolidayType(event.summary, event.description),
-      })).filter(h => h.start.date);
-      
-      source = 'google-calendar';
-    } else {
-      throw new Error('No events');
+  let holidays: Array<{ date: string; name: string; type: string }> = [];
+  let source = 'none';
+
+  // Try Google Calendar
+  const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
+  if (apiKey) {
+    try {
+      holidays = await fetchGoogleCalendarHolidays(year);
+      if (holidays.length > 0) source = 'google-calendar';
+    } catch (err) {
+      console.warn('Google Calendar preview failed:', err);
     }
-  } catch (apiError) {
-    console.warn('Google Calendar GET failed, using fallback');
-    
-    const fallbackList = FALLBACK_HOLIDAYS[String(year)] || FALLBACK_HOLIDAYS['2025'];
-    holidays = fallbackList.map(h => ({
-      summary: h.name,
-      start: { date: h.date },
-      end: { date: h.date },
-      type: h.type,
-    }));
+  }
+
+  // Fallback Nager.Date
+  if (holidays.length === 0) {
+    try {
+      holidays = await fetchNagerDateHolidays(year);
+      if (holidays.length > 0) source = 'nager-date';
+    } catch (err) {
+      console.warn('Nager.Date preview failed:', err);
+    }
+  }
+
+  // Final fallback
+  if (holidays.length === 0) {
+    holidays = (FALLBACK_HOLIDAYS[String(year)] || FALLBACK_HOLIDAYS['2025']).map(h => ({ ...h }));
     source = 'static-database';
   }
 
@@ -281,6 +277,6 @@ export async function GET(request: NextRequest) {
     count: holidays.length,
     year,
     source,
-    sourceLabel: source === 'google-calendar' ? 'Google Calendar (Live)' : 'Offline Database (Static)',
+    hasGoogleKey: !!apiKey,
   });
 }
