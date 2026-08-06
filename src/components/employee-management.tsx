@@ -252,8 +252,8 @@ export function EmployeeManagement() {
         body: JSON.stringify(requestBody),
       });
 
-      if (!data) {
-        throw new Error('Failed to add employee');
+      if (!data || data._httpError) {
+        throw new Error(data?.error || 'Failed to add employee');
       }
 
       await fetchEmployees();
@@ -304,8 +304,8 @@ export function EmployeeManagement() {
         body: JSON.stringify(requestBody),
       });
 
-      if (!data) {
-        throw new Error('Failed to update employee');
+      if (!data || data._httpError) {
+        throw new Error(data?.error || 'Failed to update employee');
       }
 
       await fetchEmployees();
@@ -329,8 +329,8 @@ export function EmployeeManagement() {
         method: 'DELETE',
       });
 
-      if (!data) {
-        throw new Error('Failed to delete employee');
+      if (!data || data._httpError) {
+        throw new Error(data?.error || 'Failed to delete employee');
       }
 
       await fetchEmployees();

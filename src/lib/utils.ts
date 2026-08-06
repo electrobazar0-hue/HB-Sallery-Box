@@ -16,16 +16,18 @@ export async function fetchJSON<T = any>(
 ): Promise<T | null> {
   try {
     const res = await fetch(url, init);
-    if (!res.ok) {
-      console.warn(`fetchJSON ${res.status} for ${url}`);
-      return null;
-    }
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
       console.warn(`fetchJSON: non-JSON response from ${url} (${ct})`);
       return null;
     }
-    return (await res.json()) as T;
+    const body = await res.json();
+    if (!res.ok) {
+      console.warn(`fetchJSON ${res.status} for ${url}:`, body);
+      // Return the error body so callers can read .error — tag it so they know
+      return { ...body, _httpError: true } as T;
+    }
+    return body as T;
   } catch (err) {
     console.warn(`fetchJSON error for ${url}:`, err);
     return null;

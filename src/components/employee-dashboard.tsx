@@ -701,7 +701,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         ...leaveForm,
       }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       addNotification({
         title: t.dashboard.leaveRequestSubmitted,
         body: t.dashboard.leaveSubmitMessage,
@@ -711,7 +711,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       setLeaveForm({ type: 'casual', startDate: '', endDate: '', reason: '' });
       // Refresh leaves from server
       const updatedLeaves = await fetchJSON(`/api/leaves?employeeId=${user?.id}`);
-      if (updatedLeaves?.leaves) setLeaveRecords(updatedLeaves.leaves);
+      if (updatedLeaves?.leaves && !updatedLeaves._httpError) setLeaveRecords(updatedLeaves.leaves);
     }
   };
 
@@ -793,7 +793,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: user?.id, ...profileForm }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       updateUser(profileForm);
       setShowProfileDialog(false);
       addNotification({ title: 'Profile Updated', body: 'Your profile has been saved', type: 'announcement' });
@@ -807,7 +807,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: user?.id, biometricEnabled: !user?.biometricEnabled }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       updateUser({ biometricEnabled: !user?.biometricEnabled });
     }
   };

@@ -392,7 +392,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         }),
       });
       
-      if (data && data.success) {
+      if (data && !data._httpError && data.success) {
         setEmployees([...employees, data.employee]);
         addNotification({
           title: t.messages.employeeAdded,
@@ -409,7 +409,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       } else {
         addNotification({
           title: t.common.error,
-          body: data.error || t.employee.validationName,
+          body: data?.error || t.employee.validationName,
           type: 'announcement',
         });
       }
@@ -433,7 +433,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, starOfMonth: !employee.starOfMonth }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       setEmployees(employees.map(e => e.id === id ? { ...e, starOfMonth: !e.starOfMonth } : e));
     }
   };
@@ -447,7 +447,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, biometricEnabled: !employee.biometricEnabled }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       setEmployees(employees.map(e => e.id === id ? { ...e, biometricEnabled: !e.biometricEnabled } : e));
     }
   };
@@ -459,7 +459,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: leave.id, status: 'rejected', approvedBy: user?.id, attendanceAllow: false }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       addNotification({
         title: t.leave.leaveRejected,
         body: `${leave.employee.name} - ${t.leave.leaveRejected}`,
@@ -485,7 +485,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: approvingLeave.id, status: 'approved', approvedBy: user?.id, attendanceAllow }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       addNotification({
         title: t.leave.leaveApproved,
         body: `${approvingLeave.employee.name} - ${t.leave.leaveApproved}. ${attendanceAllow ? t.leave.attendanceAllow : t.leave.attendanceNotAllow}.`,
@@ -519,7 +519,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         rejectionReason 
         }),
       });
-    if (result) {
+    if (result && !result._httpError) {
       setExpenses(expenses.map(e => 
         e.id === id ? { ...e, status, rejectionReason } : e
       ));
@@ -555,7 +555,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         }),
       });
       
-      if (result) {
+      if (result && !result._httpError) {
         addNotification({
           title: t.payroll.payrollUpdated,
           body: `${t.payroll.payrollForMonth} ${selectedPayrollMonth}`,
@@ -579,7 +579,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         organizationId: user.organizationId,
       }),
     });
-    if (result) {
+    if (result && !result._httpError) {
       addNotification({
         title: t.announcement.announcementSent,
         body: `"${announcementForm.title}" ${t.announcement.announcementSentDesc}`,
@@ -1151,10 +1151,12 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(editingEmployee),
                   });
-                  if (result) {
+                  if (result && !result._httpError) {
                     setEmployees(employees.map(e => e.id === editingEmployee.id ? editingEmployee : e));
                     setEditingEmployee(null);
                     addNotification({ title: t.messages.employeeUpdated, body: `${editingEmployee.name} updated`, type: 'announcement' });
+                  } else if (result?._httpError) {
+                    addNotification({ title: t.common.error, body: result.error || 'Failed to update employee', type: 'announcement' });
                   }
                   setIsLoading(false);
                 }
