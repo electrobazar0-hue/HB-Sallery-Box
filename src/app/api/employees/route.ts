@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
     try {
       const employee = await db.employee.findUnique({
         where: { userId },
-        include: { Organization: true },
+        include: { organization: true },
       });
 
       if (!employee) {

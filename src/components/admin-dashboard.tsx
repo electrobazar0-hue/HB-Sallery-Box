@@ -428,52 +428,46 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     const employee = employees.find(e => e.id === id);
     if (!employee) return;
     
-    try {
-      await fetch('/api/employees', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, starOfMonth: !employee.starOfMonth }),
-      });
-    } catch {
-      // Continue with local update
+    const result = await fetchJSON('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, starOfMonth: !employee.starOfMonth }),
+    });
+    if (result) {
+      setEmployees(employees.map(e => e.id === id ? { ...e, starOfMonth: !e.starOfMonth } : e));
     }
-    setEmployees(employees.map(e => e.id === id ? { ...e, starOfMonth: !e.starOfMonth } : e));
   };
 
   const handleToggleBiometric = async (id: string) => {
     const employee = employees.find(e => e.id === id);
     if (!employee) return;
     
-    try {
-      await fetch('/api/employees', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, biometricEnabled: !employee.biometricEnabled }),
-      });
-    } catch {
-      // Continue with local update
+    const result = await fetchJSON('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, biometricEnabled: !employee.biometricEnabled }),
+    });
+    if (result) {
+      setEmployees(employees.map(e => e.id === id ? { ...e, biometricEnabled: !e.biometricEnabled } : e));
     }
-    setEmployees(employees.map(e => e.id === id ? { ...e, biometricEnabled: !e.biometricEnabled } : e));
   };
 
   // Reject - one click direct
   const handleRejectLeave = async (leave: any) => {
-    try {
-      await fetch('/api/leaves', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: leave.id, status: 'rejected', approvedBy: user?.id, attendanceAllow: false }),
+    const result = await fetchJSON('/api/leaves', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: leave.id, status: 'rejected', approvedBy: user?.id, attendanceAllow: false }),
+    });
+    if (result) {
+      addNotification({
+        title: t.leave.leaveRejected,
+        body: `${leave.employee.name} - ${t.leave.leaveRejected}`,
+        type: 'leave',
       });
-    } catch {
-      // Continue with local update
+      setLeaves(leaves.filter(l => l.id !== leave.id));
+      if (allLeaves.length > 0) fetchAllLeaves();
     }
-    addNotification({
-      title: t.leave.leaveRejected,
-      body: `${leave.employee.name} - ${t.leave.leaveRejected}`,
-      type: 'leave',
- });
-    setLeaves(leaves.filter(l => l.id !== leave.id));
-    if (allLeaves.length > 0) fetchAllLeaves();
   };
 
   // Approve - open dialog first for attendance allow/not allow
@@ -486,24 +480,21 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const handleConfirmApprove = async (attendanceAllow: boolean) => {
     if (!approvingLeave) return;
     setShowApproveDialog(false);
-    try {
-      await fetch('/api/leaves', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: approvingLeave.id, status: 'approved', approvedBy: user?.id, attendanceAllow }),
-      });
-    } catch {
-      // Continue with local update
-    }
-    addNotification({
-      title: t.leave.leaveApproved,
-      body: `${approvingLeave.employee.name} - ${t.leave.leaveApproved}. ${attendanceAllow ? t.leave.attendanceAllow : t.leave.attendanceNotAllow}.`,
-
-      type: 'leave',
+    const result = await fetchJSON('/api/leaves', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: approvingLeave.id, status: 'approved', approvedBy: user?.id, attendanceAllow }),
     });
-    setLeaves(leaves.filter(l => l.id !== approvingLeave.id));
-    setApprovingLeave(null);
-    if (allLeaves.length > 0) fetchAllLeaves();
+    if (result) {
+      addNotification({
+        title: t.leave.leaveApproved,
+        body: `${approvingLeave.employee.name} - ${t.leave.leaveApproved}. ${attendanceAllow ? t.leave.attendanceAllow : t.leave.attendanceNotAllow}.`,
+        type: 'leave',
+      });
+      setLeaves(leaves.filter(l => l.id !== approvingLeave.id));
+      setApprovingLeave(null);
+      if (allLeaves.length > 0) fetchAllLeaves();
+    }
   };
 
   // Legacy handler kept for compatibility
@@ -518,18 +509,17 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   };
 
   const handleExpenseAction = async (id: string, status: 'approved' | 'rejected' | 'paid', rejectionReason?: string) => {
-    try {
-      await fetch('/api/expenses', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          id, 
-          status, 
-          approvedBy: user?.id,
-          rejectionReason 
+    const result = await fetchJSON('/api/expenses', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        id, 
+        status, 
+        approvedBy: user?.id,
+        rejectionReason 
         }),
       });
-      // Update local state
+    if (result) {
       setExpenses(expenses.map(e => 
         e.id === id ? { ...e, status, rejectionReason } : e
       ));
@@ -542,8 +532,6 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           type: 'expense',
         });
       }
-    } catch (error) {
-      console.error('Error updating expense:', error);
     }
   };
 
@@ -583,33 +571,34 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const handleSendAnnouncement = async () => {
     if (!announcementForm.title || !announcementForm.message || !user?.organizationId) return;
     
-    try {
-      await fetch('/api/announcements', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...announcementForm,
-          organizationId: user.organizationId,
-        }),
-      });
+    const result = await fetchJSON('/api/announcements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...announcementForm,
+        organizationId: user.organizationId,
+      }),
+    });
+    if (result) {
       addNotification({
         title: t.announcement.announcementSent,
         body: `"${announcementForm.title}" ${t.announcement.announcementSentDesc}`,
         type: 'announcement',
       });
-    } catch {
-      addNotification({
-        title: t.announcement.announcementSent,
-        body: `"${announcementForm.title}" ${t.announcement.announcementSentDesc}`,
-        type: 'announcement',
-      });
+      setShowAnnouncement(false);
+      setAnnouncementForm({ title: '', message: '' });
     }
-    setShowAnnouncement(false);
-    setAnnouncementForm({ title: '', message: '' });
   };
 
   // Handle profile photo update
-  const handleProfilePhotoUpdate = (photo: string) => {
+  const handleProfilePhotoUpdate = async (photo: string) => {
+    if (user?.id) {
+      await fetchJSON('/api/admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id, profilePhoto: photo }),
+      });
+    }
     updateUser({ profilePhoto: photo });
     addNotification({
       title: t.settings.changeProfilePhoto,
@@ -1154,8 +1143,21 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
             )}
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => { setShowAddEmployee(false); setEditingEmployee(null); }}>{t.common.cancel}</Button>
-              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={() => {
-                if (editingEmployee) { setEmployees(employees.map(e => e.id === editingEmployee.id ? editingEmployee : e)); setEditingEmployee(null); }
+              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={async () => {
+                if (editingEmployee) {
+                  setIsLoading(true);
+                  const result = await fetchJSON('/api/employees', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(editingEmployee),
+                  });
+                  if (result) {
+                    setEmployees(employees.map(e => e.id === editingEmployee.id ? editingEmployee : e));
+                    setEditingEmployee(null);
+                    addNotification({ title: t.messages.employeeUpdated, body: `${editingEmployee.name} updated`, type: 'announcement' });
+                  }
+                  setIsLoading(false);
+                }
                 else { handleAddEmployee(); }
               }} disabled={isLoading}>{editingEmployee ? t.common.save : t.dashboard.addEmployee}</Button>
             </div>

@@ -693,15 +693,15 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   const handleApplyLeave = async () => {
     if (!leaveForm.startDate || !leaveForm.endDate) return;
 
-    try {
-      await fetch('/api/leaves', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: user?.id,
-          ...leaveForm,
-        }),
-      });
+    const result = await fetchJSON('/api/leaves', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeId: user?.id,
+        ...leaveForm,
+      }),
+    });
+    if (result) {
       addNotification({
         title: t.dashboard.leaveRequestSubmitted,
         body: t.dashboard.leaveSubmitMessage,
@@ -709,9 +709,9 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       });
       setShowLeaveDialog(false);
       setLeaveForm({ type: 'casual', startDate: '', endDate: '', reason: '' });
-    } catch (error) {
-      console.error('Leave error:', error);
-      setShowLeaveDialog(false);
+      // Refresh leaves from server
+      const updatedLeaves = await fetchJSON(`/api/leaves?employeeId=${user?.id}`);
+      if (updatedLeaves?.leaves) setLeaveRecords(updatedLeaves.leaves);
     }
   };
 
@@ -786,13 +786,30 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     }
   };
 
-  const handleUpdateProfile = () => {
-    updateUser(profileForm);
-    setShowProfileDialog(false);
+  const handleUpdateProfile = async () => {
+    setIsLoading(true);
+    const result = await fetchJSON('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: user?.id, ...profileForm }),
+    });
+    if (result) {
+      updateUser(profileForm);
+      setShowProfileDialog(false);
+      addNotification({ title: 'Profile Updated', body: 'Your profile has been saved', type: 'announcement' });
+    }
+    setIsLoading(false);
   };
 
-  const handleToggleBiometric = () => {
-    updateUser({ biometricEnabled: !user?.biometricEnabled });
+  const handleToggleBiometric = async () => {
+    const result = await fetchJSON('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: user?.id, biometricEnabled: !user?.biometricEnabled }),
+    });
+    if (result) {
+      updateUser({ biometricEnabled: !user?.biometricEnabled });
+    }
   };
 
   const handleViewPhoto = (photo: string) => {
