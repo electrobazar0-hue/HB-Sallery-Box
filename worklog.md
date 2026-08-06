@@ -227,3 +227,27 @@ Stage Summary:
 - All 10 API endpoints verified working
 - Demo credentials removed from login UI
 - Demo accounts still exist in DB: admin/admin123, employee/emp123
+
+---
+Task ID: registration-fix
+Agent: Main Agent
+Task: Fix registration failure error
+
+Work Log:
+- Diagnosed registration 500 error by testing `/api/auth/register` with Python http.client
+- Found Error 1: `Argument 'id' is missing` - Prisma schema had `id String @id` without `@default()` on ALL 15 models
+- Found Error 2: `Argument 'updatedAt' is missing` - `updatedAt DateTime` without `@updatedAt` on ALL 12 models that have it
+- Found Error 3: `isDatabaseConnected` imported from `@/lib/db` but doesn't exist - `/api/setup/route.ts` crashed with 500
+- Found Error 4: page.tsx redirected to 'Setup Required' screen when `/api/setup` failed, blocking login/registration
+
+Fixes Applied:
+1. `prisma/schema.prisma` - Added `@default(cuid())` to all 15 model `id` fields
+2. `prisma/schema.prisma` - Added `@updatedAt` to all 12 `updatedAt DateTime` fields
+3. `src/app/api/setup/route.ts` - Replaced missing import with local `isDatabaseConnected()` function
+4. `src/app/page.tsx` - Added retry logic (3 attempts) and fallback to login screen on setup check failure
+5. Ran `prisma generate` and `prisma db push` to regenerate client and sync schema
+
+Stage Summary:
+- Registration API confirmed working (200 status, returns user+org data) via direct HTTP test
+- All `.create()` calls across the app will now auto-generate `id` and `updatedAt`
+- Login screen now properly shown after splash screen

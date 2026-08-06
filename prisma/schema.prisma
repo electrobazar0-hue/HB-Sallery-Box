@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Admin {
-  id               String        @id
+  id               String        @id @default(cuid())
   userId           String        @unique
   password         String
   securityPassword String
@@ -18,24 +18,24 @@ model Admin {
   address          String?
   profilePhoto     String?
   createdAt        DateTime      @default(now())
-  updatedAt        DateTime
+  updatedAt        DateTime      @updatedAt
   employees        Employee[]
   organization     Organization?
 }
 
 model Announcement {
-  id             String       @id
+  id             String       @id @default(cuid())
   title          String
   message        String
   organizationId String
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
-  updatedAt      DateTime
+  updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model Attendance {
-  id            String   @id
+  id            String   @id @default(cuid())
   employeeId    String
   date          String
   punchIn       String?
@@ -51,14 +51,14 @@ model Attendance {
   status        String   @default("present")
   notes         String?
   createdAt     DateTime @default(now())
-  updatedAt     DateTime
+  updatedAt     DateTime @updatedAt
   employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, date])
 }
 
 model Employee {
-  id                String              @id
+  id                String              @id @default(cuid())
   userId            String              @unique
   password          String
   securityPassword  String
@@ -86,7 +86,7 @@ model Employee {
   geofenceLng       Float?
   geofenceRadius    Float?              @default(100)
   createdAt         DateTime            @default(now())
-  updatedAt         DateTime
+  updatedAt         DateTime            @updatedAt
   attendance        Attendance[]
   admin             Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
   organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -99,7 +99,7 @@ model Employee {
 }
 
 model EmployeeIncentive {
-  id               String             @id
+  id               String             @id @default(cuid())
   employeeId       String
   categoryId       String?
   month            String
@@ -116,7 +116,7 @@ model EmployeeIncentive {
 }
 
 model EmployeeShift {
-  id         String   @id
+  id         String   @id @default(cuid())
   employeeId String
   shiftId    String
   createdAt  DateTime @default(now())
@@ -127,7 +127,7 @@ model EmployeeShift {
 }
 
 model Expense {
-  id               String    @id
+  id               String    @id @default(cuid())
   employeeId       String
   title            String
   description      String?
@@ -146,7 +146,7 @@ model Expense {
   paymentMethod    String?
   paymentReference String?
   createdAt        DateTime  @default(now())
-  updatedAt        DateTime
+  updatedAt        DateTime  @updatedAt
   employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([category])
@@ -155,7 +155,7 @@ model Expense {
 }
 
 model Holiday {
-  id              String       @id
+  id              String       @id @default(cuid())
   organizationId  String
   holidayName     String
   date            String
@@ -172,7 +172,7 @@ model Holiday {
   syncSource      String?
   createdBy       String
   createdAt       DateTime     @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime     @updatedAt
   organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([organizationId, date])
@@ -181,20 +181,20 @@ model Holiday {
 }
 
 model IncentiveCategory {
-  id                String              @id
+  id                String              @id @default(cuid())
   name              String
   description       String?
   amount            Float
   organizationId    String
   active            Boolean             @default(true)
   createdAt         DateTime            @default(now())
-  updatedAt         DateTime
+  updatedAt         DateTime            @updatedAt
   employeeIncentives EmployeeIncentive[]
   organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }
 
 model Leave {
-  id              String    @id
+  id              String    @id @default(cuid())
   employeeId      String
   type            String
   startDate       String
@@ -205,18 +205,18 @@ model Leave {
   approvedBy      String?
   approvedAt      DateTime?
   createdAt       DateTime  @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime  @updatedAt
   employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 }
 
 model Organization {
-  id                String              @id
+  id                String              @id @default(cuid())
   name              String
   address           String
   gst               String?
   adminId           String              @unique
   createdAt         DateTime            @default(now())
-  updatedAt         DateTime
+  updatedAt         DateTime            @updatedAt
   announcements     Announcement[]
   employees         Employee[]
   holidays          Holiday[]
@@ -226,7 +226,7 @@ model Organization {
 }
 
 model PayrollAdjustment {
-  id              String    @id
+  id              String    @id @default(cuid())
   employeeId      String
   month           String
   baseSalary      Float     @default(0)
@@ -240,7 +240,7 @@ model PayrollAdjustment {
   paidAt          DateTime?
   createdBy       String
   createdAt       DateTime  @default(now())
-  updatedAt       DateTime
+  updatedAt       DateTime  @updatedAt
   employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, month])
@@ -248,7 +248,7 @@ model PayrollAdjustment {
 }
 
 model SalaryRecord {
-  id         String    @id
+  id         String    @id @default(cuid())
   employeeId String
   month      String
   baseSalary Float
@@ -259,21 +259,21 @@ model SalaryRecord {
   status     String    @default("pending")
   paidAt     DateTime?
   createdAt  DateTime  @default(now())
-  updatedAt  DateTime
+  updatedAt  DateTime  @updatedAt
   employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, month])
 }
 
 model Shift {
-  id             String          @id
+  id             String          @id @default(cuid())
   name           String
   startTime      String
   endTime        String
   graceMinutes   Int             @default(15)
   organizationId String
   createdAt      DateTime        @default(now())
-  updatedAt      DateTime
+  updatedAt      DateTime        @updatedAt
   employees        EmployeeShift[]
   organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 }

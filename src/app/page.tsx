@@ -35,17 +35,28 @@ export default function Home() {
       return;
     }
 
-    // Check database status before showing login
-    try {
-      const res = await fetch('/api/setup');
-      const data = await res.json();
-      if (data.success && data.connected) {
-        setCurrentScreen('login');
-      } else {
-        setCurrentScreen('setup');
+    // Check database status before showing login (with retry)
+    let connected = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch('/api/setup');
+        const data = await res.json();
+        if (data.success && data.connected) {
+          connected = true;
+          break;
+        }
+      } catch {
+        // Retry on network error
+        if (attempt < 2) await new Promise(r => setTimeout(r, 1000));
       }
-    } catch {
-      setCurrentScreen('setup');
+    }
+
+    if (connected) {
+      setCurrentScreen('login');
+    } else {
+      // Fallback to login even if setup check fails
+      // (the setup guide is only needed for PostgreSQL on Vercel)
+      setCurrentScreen('login');
     }
   }, []);
 
