@@ -11,7 +11,6 @@ async function isDatabaseConnected(): Promise<boolean> {
 }
 
 export async function GET() {
-  // Check 1: DATABASE_URL env var
   if (!process.env.DATABASE_URL) {
     return NextResponse.json({
       success: false,
@@ -20,7 +19,6 @@ export async function GET() {
     }, { status: 503 });
   }
 
-  // Check 2: Database connectivity
   try {
     const connected = await isDatabaseConnected();
     if (!connected) {
@@ -54,27 +52,12 @@ export async function POST() {
   }
 
   try {
-    // Try to push schema using Prisma programmatically
-    const { PrismaClient } = await import('@prisma/client');
-    
-    // Run a simple query to verify connection
-    const testClient = new PrismaClient();
-    await testClient.$queryRaw`SELECT 1`;
-    await testClient.$disconnect();
-    
-    // Try to create tables by running a CREATE TABLE-like operation
-    // We use db push approach by executing raw SQL for each model
-    // Actually, better to use the migrate approach
-    const { execSync } = await import('child_process');
-    
-    try {
-      execSync('npx prisma db push --skip-generate --accept-data-loss 2>&1', {
-        stdio: 'pipe',
-        timeout: 60000,
-      });
-    } catch (pushError) {
-      // If prisma db push fails, try to at least verify connection
-      console.error('Prisma db push warning:', pushError);
+    const connected = await isDatabaseConnected();
+    if (!connected) {
+      return NextResponse.json({
+        success: false,
+        error: 'Database connection failed. Check your DATABASE_URL.',
+      }, { status: 500 });
     }
 
     return NextResponse.json({
