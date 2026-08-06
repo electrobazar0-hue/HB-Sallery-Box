@@ -12,6 +12,7 @@ import { SetupGuide } from '@/components/setup-guide';
 import { PWAInstallPrompt } from '@/components/pwa-install-prompt';
 import { useAuthStore } from '@/store/auth-store';
 import { useBiometric } from '@/hooks/use-biometric';
+import { fetchJSON } from '@/lib/utils';
 
 type Screen = 'splash' | 'setup' | 'login' | 'register' | 'dashboard' | 'settings';
 
@@ -39,9 +40,8 @@ export default function Home() {
     let connected = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const res = await fetch('/api/setup');
-        const data = await res.json();
-        if (data.success && data.connected) {
+        const data = await fetchJSON<{ success: boolean; connected?: boolean }>('/api/setup');
+        if (data?.success && data.connected) {
           connected = true;
           break;
         }

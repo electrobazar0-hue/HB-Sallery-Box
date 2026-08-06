@@ -393,3 +393,27 @@ Stage Summary:
 - 6 files updated with 17 total fetchJSON replacements
 - All .json() calls in data-fetching components now use safe fetchJSON
 - Lint passes with 0 errors
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix all registration and "Unexpected token '<'" JSON parse errors
+
+Work Log:
+- Explored entire project structure: 20 API route files, 40+ frontend fetch calls
+- Identified root cause: 4 raw `fetch()` calls called `.json()` without checking content-type first
+- When server returns HTML (Next.js error/404 page), `response.json()` throws SyntaxError with "Unexpected token '<'"
+- Added `safeParseJSON()` helper to `src/lib/utils.ts` that checks content-type before parsing
+- Fixed `src/components/login-screen.tsx`: Replaced 2 raw fetch calls (login + reset-password) with safeParseJSON
+- Fixed `src/components/admin-registration.tsx`: Replaced 1 raw fetch call (register) with safeParseJSON
+- Fixed `src/app/page.tsx`: Replaced raw fetch call (setup check) with fetchJSON helper
+- Created `src/app/api/[...catchall]/route.ts`: Catch-all API route that returns JSON 404 instead of HTML for non-existent endpoints
+- Verified all API endpoints return proper JSON: /api/setup, /api/auth/login, /api/auth/register, /api/nonexistent
+- Confirmed Prisma schema has @default(cuid()) on all IDs and @updatedAt on all updatedAt fields
+- Ran bun run lint - passes clean
+
+Stage Summary:
+- Created `safeParseJSON()` in utils.ts - a helper that never throws, returns {data, ok, status}
+- Fixed 4 vulnerable fetch calls across 3 files to use safe parsing
+- Added catch-all API route for non-existent endpoints (returns JSON, not HTML)
+- All 33 other fetch calls already use the safe `fetchJSON` wrapper
+- 7 fire-and-forget fetch calls don't call .json() so they can't trigger this error

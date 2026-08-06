@@ -17,6 +17,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { LanguageToggle } from '@/components/language-toggle';
 import { useLanguageStore } from '@/lib/i18n';
 import { useAuthStore, type UserRole } from '@/store/auth-store';
+import { safeParseJSON } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -93,10 +94,10 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
         }),
       });
 
-      const data = await response.json();
+      const { data, ok } = await safeParseJSON(response);
 
-      if (!response.ok) {
-        throw new Error(data.error || t.common.error);
+      if (!ok || !data) {
+        throw new Error(data?.error || `${t.common.error}. ${t.common.retry}`);
       }
 
       // Login successful
@@ -173,10 +174,10 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
         }),
       });
 
-      const data = await response.json();
+      const { data, ok } = await safeParseJSON(response);
 
-      if (!response.ok) {
-        throw new Error(data.error || t.common.error);
+      if (!ok || !data) {
+        throw new Error(data?.error || `${t.common.error}. ${t.common.retry}`);
       }
 
       setForgotSuccess(t.auth.passwordResetSuccess);

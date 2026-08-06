@@ -21,6 +21,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { useAuthStore } from '@/store/auth-store';
 import { CameraCapture } from '@/components/camera-capture';
 import { useLanguageStore } from '@/lib/i18n';
+import { safeParseJSON } from '@/lib/utils';
 
 interface AdminRegistrationProps {
   onBack: () => void;
@@ -245,10 +246,10 @@ export function AdminRegistration({ onBack, onRegistered, initialPhone }: AdminR
         }),
       });
 
-      const data = await response.json();
+      const { data, ok } = await safeParseJSON(response);
 
-      if (!response.ok) {
-        throw new Error(data.error || t.orgSetup.registrationFailed);
+      if (!ok || !data) {
+        throw new Error(data?.error || `${t.orgSetup.registrationFailed}. ${t.common?.retry || 'Please try again.'}`);
       }
 
       // Login the user
