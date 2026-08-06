@@ -2,6 +2,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { dateTo24HourFormatWithSeconds } from '@/lib/time-utils';
 
+function getLocalDateKey(value: unknown) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const date = value ? new Date(value as string | number | Date) : new Date();
+  if (isNaN(date.getTime())) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function secondsFromTime(time: string) {
+  const parts = time.split(':').map(Number);
+  if (parts.length < 2 || parts.some((part) => Number.isNaN(part))) return null;
+  return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
+}
+
+function workSecondsBetween(startDate: string, startTime: string, endDate: string, endTime: string) {
+  const startSeconds = secondsFromTime(startTime);
+  const endSeconds = secondsFromTime(endTime);
+  if (startSeconds == null || endSeconds == null) return null;
+
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+
+  const daySeconds = Math.round((end.getTime() - start.getTime()) / 1000);
+  return daySeconds + endSeconds - startSeconds;
+}
+
 // GET /api/attendance - Get attendance records
 export async function GET(request: NextRequest) {
   const employeeId = request.nextUrl.searchParams.get('employeeId');
@@ -46,7 +79,10 @@ export async function GET(request: NextRequest) {
       result = attendance.filter(a => a.date.startsWith(month));
     }
 
-    return NextResponse.json({ attendance: result });
+    return NextResponse.json(
+      { attendance: result },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   } catch (error) {
     console.error('Error fetching attendance:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -61,6 +97,7 @@ export async function POST(request: NextRequest) {
       employeeId, type,
       latitude, longitude, photo,
       timestamp,    // LOCAL timestamp from frontend (device time, not GPS UTC)
+      localDate,    // Local date as YYYY-MM-DD from frontend
       localTime,    // Local time as formatted string (HH:MM:SS) - matches user's timezone
       accuracy,     // GPS accuracy in meters
     } = body;
@@ -80,10 +117,10 @@ export async function POST(request: NextRequest) {
 
     // Use LOCAL timestamp from device (matches user's local timezone)
     const now = timestamp ? new Date(timestamp) : new Date();
-    const date = now.toISOString().split('T')[0];
+    const date = getLocalDateKey(localDate) || getLocalDateKey(now);
 
     // Validate timestamp
-    if (isNaN(now.getTime())) {
+    if (isNaN(now.getTime()) || !date) {
       console.error('Invalid timestamp:', timestamp);
       return NextResponse.json({ error: 'Invalid timestamp provided' }, { status: 400 });
     }
@@ -95,7 +132,7 @@ export async function POST(request: NextRequest) {
 
     if (type === 'in') {
       // Check if already punched in
-      const existing = await db.attendance.findUnique({
+      let existing = await db.attendance.findUnique({
         where: {
           employeeId_date: {
             employeeId,
@@ -155,7 +192,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Punch out
-      const existing = await db.attendance.findUnique({
+      let existing = await db.attendance.findUnique({
         where: {
           employeeId_date: {
             employeeId,
@@ -163,6 +200,17 @@ export async function POST(request: NextRequest) {
           },
         },
       });
+
+      if (!existing || !existing.punchIn) {
+        const openRecords = await db.attendance.findMany({
+          where: { employeeId },
+          orderBy: [
+            { date: 'desc' },
+            { punchIn: 'desc' },
+          ],
+        });
+        existing = openRecords.find((record) => record.punchIn && !record.punchOut) || existing;
+      }
 
       if (!existing || !existing.punchIn) {
         console.log('Not punched in yet');
@@ -174,19 +222,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Already punched out' }, { status: 400 });
       }
 
-      // Calculate work hours using precise time (including seconds)
-      const punchInTime = existing.punchIn.split(':').map(Number);
-      const punchOutTime = time.split(':').map(Number);
-
-      // Validate time format
-      if (punchInTime.length < 2 || punchOutTime.length < 2) {
+      const workSeconds = workSecondsBetween(existing.date, existing.punchIn, date, time);
+      if (workSeconds == null) {
         console.error('Invalid time format:', { punchIn: existing.punchIn, punchOut: time });
         return NextResponse.json({ error: 'Invalid time format' }, { status: 400 });
       }
-
-      const punchInSeconds = punchInTime[0] * 3600 + punchInTime[1] * 60 + (punchInTime[2] || 0);
-      const punchOutSeconds = punchOutTime[0] * 3600 + punchOutTime[1] * 60 + (punchOutTime[2] || 0);
-      const workSeconds = punchOutSeconds - punchInSeconds;
 
       if (workSeconds < 0) {
         console.error('Punch out time is before punch in time');

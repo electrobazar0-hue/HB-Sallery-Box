@@ -113,6 +113,13 @@ interface ExpenseRecord {
   };
 }
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardProps) {
   const { user, updateUser } = useAuthStore();
   const { t } = useLanguageStore();
@@ -220,20 +227,36 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchAttendance = async () => {
       try {
-        const data = await fetchJSON(`/api/attendance?employeeId=${user.id}`);
+        const data = await fetchJSON(`/api/attendance?employeeId=${user.id}`, { cache: 'no-store' });
         if (!data) {
           throw new Error('Failed to fetch attendance');
         }
         
-        if (mounted && data.attendance && data.attendance.length > 0) {
-          setAttendanceHistory(data.attendance);
-          // Check if already punched in today
-          const today = new Date().toISOString().split('T')[0];
-          const todayRecord = data.attendance.find((a: AttendanceRecord) => a.date === today);
-          if (todayRecord && todayRecord.punchIn && !todayRecord.punchOut) {
-            setIsPunchedIn(true);
-            setPunchTime({ in: todayRecord.punchIn.slice(0, 5) });
-            setPunchInLocation({ lat: todayRecord.punchInLat!, lng: todayRecord.punchInLng! });
+        if (mounted && data.attendance) {
+          const records = data.attendance as AttendanceRecord[];
+          setAttendanceHistory(records);
+
+          const today = getLocalDateKey();
+          const todayRecord = records.find((a) => a.date === today);
+
+          if (todayRecord?.punchIn) {
+            setIsPunchedIn(!todayRecord.punchOut);
+            setPunchTime({ in: todayRecord.punchIn, out: todayRecord.punchOut });
+            setPunchInLocation(
+              todayRecord.punchInLat && todayRecord.punchInLng
+                ? { lat: todayRecord.punchInLat, lng: todayRecord.punchInLng }
+                : null,
+            );
+            setPunchOutLocation(
+              todayRecord.punchOutLat && todayRecord.punchOutLng
+                ? { lat: todayRecord.punchOutLat, lng: todayRecord.punchOutLng }
+                : null,
+            );
+          } else {
+            setIsPunchedIn(false);
+            setPunchTime({});
+            setPunchInLocation(null);
+            setPunchOutLocation(null);
           }
         }
       } catch (error) {
@@ -241,6 +264,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         // Don't set demo data - keep empty for fresh employee
         if (mounted) {
           setAttendanceHistory([]);
+          setIsPunchedIn(false);
+          setPunchTime({});
+          setPunchInLocation(null);
+          setPunchOutLocation(null);
         }
       }
     };
@@ -431,7 +458,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
   // Check if today is an approved leave day
   const checkIfTodayIsApprovedLeave = (): { isLeave: boolean; leaveRecord: LeaveRecord | null } => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateKey();
     const approvedLeave = leaveRecords.find(leave => {
       if (leave.status !== 'approved') return false;
       const start = new Date(leave.startDate);
@@ -538,7 +565,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       // Use LOCAL time from device (not GPS timestamp which is UTC)
       const now = new Date(); // Device's local time
-      const date = now.toISOString().split('T')[0];
+      const date = getLocalDateKey(now);
 
       // Format times using device's LOCAL time
       const time = dateTo12HourFormat(now); // 12-hour format for display (e.g., "10:39 AM")
@@ -582,6 +609,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         latitude: coords.latitude,
         longitude: coords.longitude,
         photo,
+        localDate: date,
         timestamp: now.getTime(), // Device's local timestamp
         localTime: fullTime, // Local time as string (HH:MM:SS) - matches user's timezone
         accuracy: coords.accuracy, // Location accuracy in meters
@@ -596,13 +624,14 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
       console.log('API response data:', data);
 
-      if (!data) {
-        throw new Error('Failed to punch in/out');
+      if (!data || data._httpError) {
+        throw new Error(data?.error || 'Failed to punch in/out');
       }
 
       // Show accuracy in notification
       const accuracyInfo = data.accuracy ? ` (±${data.accuracy.toFixed(0)}m accuracy)` : '';
       const timeInfo = data.accurateTime || accurateTime;
+      const savedRecord = data.attendance as AttendanceRecord | undefined;
 
       if (pendingPunchType === 'in') {
         setPunchTime({ ...punchTime, in: timeInfo });
@@ -622,7 +651,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         }
 
         // Update attendance history
-        const newRecord: AttendanceRecord = {
+        const newRecord: AttendanceRecord = savedRecord || {
           id: Date.now().toString(),
           date,
           punchIn: fullTime,
@@ -652,20 +681,26 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         }
 
         // Update today's record in history
-        setAttendanceHistory(prev => prev.map(record => {
-          if (record.date === date) {
-            return {
-              ...record,
-              punchOut: fullTime,
-              punchOutLat: coords.latitude,
-              punchOutLng: coords.longitude,
-              punchOutPhoto: photo,
-              workHours: data.workHours || 9,
-              overtime: data.overtime || 1,
-            };
-          }
-          return record;
-        }));
+        setAttendanceHistory(prev => {
+          const currentRecord = prev.find(record => record.date === date);
+          const updatedRecord: AttendanceRecord = savedRecord || {
+            id: currentRecord?.id || Date.now().toString(),
+            date,
+            punchIn: currentRecord?.punchIn || fullTime,
+            punchInLat: currentRecord?.punchInLat,
+            punchInLng: currentRecord?.punchInLng,
+            punchInPhoto: currentRecord?.punchInPhoto,
+            punchOut: fullTime,
+            punchOutLat: coords.latitude,
+            punchOutLng: coords.longitude,
+            punchOutPhoto: photo,
+            workHours: data.workHours || 0,
+            overtime: data.overtime || 0,
+            status: currentRecord?.status || 'present',
+          };
+
+          return [updatedRecord, ...prev.filter(record => record.date !== updatedRecord.date)];
+        });
       }
     } catch (error) {
       console.error('Punch error:', error);

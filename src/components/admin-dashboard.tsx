@@ -161,6 +161,13 @@ interface EmployeeEventsData {
   upcoming: { birthdays: EmployeeEvent[]; anniversaries: EmployeeEvent[] };
 }
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const { user, updateUser, updateOrganizationLogo } = useAuthStore();
   const { t } = useLanguageStore();
@@ -274,8 +281,11 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       // Fetch attendance - NO DEMO DATA
       if (user.organizationId) {
         try {
-          const today = new Date().toISOString().split('T')[0];
-          const data = await fetchJSON(`/api/attendance?organizationId=${user.organizationId}&date=${today}`);
+          const today = getLocalDateKey();
+          const data = await fetchJSON(
+            `/api/attendance?organizationId=${user.organizationId}&date=${today}`,
+            { cache: 'no-store' },
+          );
           if (mounted && data?.attendance) {
             setAttendance(data.attendance);
           }

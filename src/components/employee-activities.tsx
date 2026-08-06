@@ -55,12 +55,19 @@ interface EmployeeActivitiesProps {
   organizationId: string;
 }
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function EmployeeActivities({ organizationId }: EmployeeActivitiesProps) {
   const { t } = useLanguageStore();
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateKey());
   const [isLoading, setIsLoading] = useState(true);
   const [photoDialog, setPhotoDialog] = useState<{ open: boolean; photo: string | null; title: string }>({
     open: false,
@@ -104,7 +111,7 @@ export function EmployeeActivities({ organizationId }: EmployeeActivitiesProps) 
         if (selectedEmployee !== 'all') {
           url = `/api/attendance?employeeId=${selectedEmployee}`;
         }
-        const data = await fetchJSON(url);
+        const data = await fetchJSON(url, { cache: 'no-store' });
         if (data?.attendance) {
           setActivities(data.attendance);
         }
@@ -179,17 +186,17 @@ export function EmployeeActivities({ organizationId }: EmployeeActivitiesProps) 
   const goToPreviousDay = () => {
     const prev = new Date(selectedDate);
     prev.setDate(prev.getDate() - 1);
-    setSelectedDate(prev.toISOString().split('T')[0]);
+    setSelectedDate(getLocalDateKey(prev));
   };
 
   const goToNextDay = () => {
     const next = new Date(selectedDate);
     next.setDate(next.getDate() + 1);
-    setSelectedDate(next.toISOString().split('T')[0]);
+    setSelectedDate(getLocalDateKey(next));
   };
 
   const goToToday = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setSelectedDate(getLocalDateKey());
   };
 
   // Helper to get translated status
