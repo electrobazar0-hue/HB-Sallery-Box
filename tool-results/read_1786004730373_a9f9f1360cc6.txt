@@ -1,0 +1,791 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useState, useEffect, useCallback } from 'react';
+     4→     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→     5→import { 
+     6→     6→  Plus, Edit2, Trash2, Search, X, User, Lock, Phone, Mail, 
+     7→     7→  MapPin, Briefcase, Building, DollarSign, Camera, Upload,
+     8→     8→  Eye, EyeOff, AlertCircle, Loader2, Check, Navigation
+     9→     9→} from 'lucide-react';
+    10→    10→import { Button } from '@/components/ui/button';
+    11→    11→import { Input } from '@/components/ui/input';
+    12→    12→import { Label } from '@/components/ui/label';
+    13→    13→import {
+    14→    14→  Card,
+    15→    15→  CardContent,
+    16→    16→  CardHeader,
+    17→    17→  CardTitle,
+    18→    18→} from '@/components/ui/card';
+    19→    19→import {
+    20→    20→  Dialog,
+    21→    21→  DialogContent,
+    22→    22→  DialogHeader,
+    23→    23→  DialogTitle,
+    24→    24→} from '@/components/ui/dialog';
+    25→    25→import {
+    26→    26→  AlertDialog,
+    27→    27→  AlertDialogAction,
+    28→    28→  AlertDialogCancel,
+    29→    29→  AlertDialogContent,
+    30→    30→  AlertDialogDescription,
+    31→    31→  AlertDialogFooter,
+    32→    32→  AlertDialogHeader,
+    33→    33→  AlertDialogTitle,
+    34→    34→} from '@/components/ui/alert-dialog';
+    35→    35→import { Badge } from '@/components/ui/badge';
+    36→    36→import { useAuthStore } from '@/store/auth-store';
+    37→    37→import { CameraCapture } from '@/components/camera-capture';
+    38→    38→
+    39→    39→interface Employee {
+    40→    40→  id: string;
+    41→    41→  userId: string;
+    42→    42→  name: string;
+    43→    43→  phone: string;
+    44→    44→  email?: string;
+    45→    45→  address?: string;
+    46→    46→  designation?: string;
+    47→    47→  department?: string;
+    48→    48→  salary: number;
+    49→    49→  profilePhoto?: string;
+    50→    50→  active: boolean;
+    51→    51→  createdAt: string;
+    52→    52→}
+    53→    53→
+    54→    54→export function EmployeeManagement() {
+    55→    55→  const { user } = useAuthStore();
+    56→    56→  const [employees, setEmployees] = useState<Employee[]>([]);
+    57→    57→  const [isLoading, setIsLoading] = useState(true);
+    58→    58→  const [searchQuery, setSearchQuery] = useState('');
+    59→    59→  
+    60→    60→  // Dialog states
+    61→    61→  const [showAddDialog, setShowAddDialog] = useState(false);
+    62→    62→  const [showEditDialog, setShowEditDialog] = useState(false);
+    63→    63→  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    64→    64→  const [showCameraCapture, setShowCameraCapture] = useState(false);
+    65→    65→  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+    66→    66→  const [isSaving, setIsSaving] = useState(false);
+    67→    67→  const [error, setError] = useState('');
+    68→    68→
+    69→    69→  // Form states
+    70→    70→  const [formData, setFormData] = useState({
+    71→    71→    userId: '',
+    72→    72→    password: '',
+    73→    73→    name: '',
+    74→    74→    phone: '',
+    75→    75→    email: '',
+    76→    76→    address: '',
+    77→    77→    designation: '',
+    78→    78→    department: '',
+    79→    79→    salary: '',
+    80→    80→    profilePhoto: '',
+    81→    81→    active: true,
+    82→    82→    geofenceEnabled: false,
+    83→    83→    geofenceLat: '',
+    84→    84→    geofenceLng: '',
+    85→    85→    geofenceRadius: '100',
+    86→    86→  });
+    87→    87→  const [showPassword, setShowPassword] = useState(false);
+    88→    88→
+    89→    89→  // Fetch employees
+    90→    90→  const fetchEmployees = useCallback(async () => {
+    91→    91→    if (!user?.id) return;
+    92→    92→    
+    93→    93→    try {
+    94→    94→      const response = await fetch(`/api/employees?adminId=${user.id}`);
+    95→    95→      const data = await response.json();
+    96→    96→      setEmployees(data.employees || []);
+    97→    97→    } catch (error) {
+    98→    98→      console.error('Error fetching employees:', error);
+    99→    99→    } finally {
+   100→   100→      setIsLoading(false);
+   101→   101→    }
+   102→   102→  }, [user?.id]);
+   103→   103→
+   104→   104→  useEffect(() => {
+   105→   105→    fetchEmployees();
+   106→   106→  }, [fetchEmployees]);
+   107→   107→
+   108→   108→  // Filter employees by search
+   109→   109→  const filteredEmployees = employees.filter(emp => 
+   110→   110→    emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+   111→   111→    emp.phone.includes(searchQuery) ||
+   112→   112→    emp.userId.toLowerCase().includes(searchQuery.toLowerCase())
+   113→   113→  );
+   114→   114→
+   115→   115→  // Reset form
+   116→   116→  const resetForm = () => {
+   117→   117→    setFormData({
+   118→   118→      userId: '',
+   119→   119→      password: '',
+   120→   120→      name: '',
+   121→   121→      phone: '',
+   122→   122→      email: '',
+   123→   123→      address: '',
+   124→   124→      designation: '',
+   125→   125→      department: '',
+   126→   126→      salary: '',
+   127→   127→      profilePhoto: '',
+   128→   128→      active: true,
+   129→   129→      geofenceEnabled: false,
+   130→   130→      geofenceLat: '',
+   131→   131→      geofenceLng: '',
+   132→   132→      geofenceRadius: '100',
+   133→   133→    });
+   134→   134→    setError('');
+   135→   135→    setShowPassword(false);
+   136→   136→  };
+   137→   137→
+   138→   138→  // Open add dialog
+   139→   139→  const openAddDialog = () => {
+   140→   140→    resetForm();
+   141→   141→    setShowAddDialog(true);
+   142→   142→  };
+   143→   143→
+   144→   144→  // Open edit dialog
+   145→   145→  const openEditDialog = (employee: Employee) => {
+   146→   146→    setSelectedEmployee(employee);
+   147→   147→    setFormData({
+   148→   148→      userId: employee.userId,
+   149→   149→      password: '',
+   150→   150→      name: employee.name,
+   151→   151→      phone: employee.phone,
+   152→   152→      email: employee.email || '',
+   153→   153→      address: employee.address || '',
+   154→   154→      designation: employee.designation || '',
+   155→   155→      department: employee.department || '',
+   156→   156→      salary: employee.salary.toString(),
+   157→   157→      profilePhoto: employee.profilePhoto || '',
+   158→   158→      active: employee.active,
+   159→   159→      geofenceEnabled: (employee as any).geofenceEnabled || false,
+   160→   160→      geofenceLat: (employee as any).geofenceLat ? (employee as any).geofenceLat.toString() : '',
+   161→   161→      geofenceLng: (employee as any).geofenceLng ? (employee as any).geofenceLng.toString() : '',
+   162→   162→      geofenceRadius: (employee as any).geofenceRadius ? (employee as any).geofenceRadius.toString() : '100',
+   163→   163→    });
+   164→   164→    setShowEditDialog(true);
+   165→   165→  };
+   166→   166→
+   167→   167→  // Open delete dialog
+   168→   168→  const openDeleteDialog = (employee: Employee) => {
+   169→   169→    setSelectedEmployee(employee);
+   170→   170→    setShowDeleteDialog(true);
+   171→   171→  };
+   172→   172→
+   173→   173→  // Handle image upload
+   174→   174→  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+   175→   175→    const file = e.target.files?.[0];
+   176→   176→    if (file) {
+   177→   177→      const reader = new FileReader();
+   178→   178→      reader.onload = (event) => {
+   179→   179→        setFormData(prev => ({ ...prev, profilePhoto: event.target?.result as string }));
+   180→   180→      };
+   181→   181→      reader.readAsDataURL(file);
+   182→   182→    }
+   183→   183→  };
+   184→   184→
+   185→   185→  // Handle camera capture
+   186→   186→  const handleCameraCapture = (photo: string) => {
+   187→   187→    setFormData(prev => ({ ...prev, profilePhoto: photo }));
+   188→   188→    setShowCameraCapture(false);
+   189→   189→  };
+   190→   190→
+   191→   191→  // Handle get current location
+   192→   192→  const handleGetCurrentLocation = () => {
+   193→   193→    if (!navigator.geolocation) {
+   194→   194→      setError('Geolocation is not supported by your browser');
+   195→   195→      return;
+   196→   196→    }
+   197→   197→
+   198→   198→    navigator.geolocation.getCurrentPosition(
+   199→   199→      (position) => {
+   200→   200→        setFormData(prev => ({
+   201→   201→          ...prev,
+   202→   202→          geofenceLat: position.coords.latitude.toFixed(6),
+   203→   203→          geofenceLng: position.coords.longitude.toFixed(6),
+   204→   204→        }));
+   205→   205→      },
+   206→   206→      (error) => {
+   207→   207→        setError('Unable to get your location. Please enter coordinates manually.');
+   208→   208→        console.error('Geolocation error:', error);
+   209→   209→      },
+   210→   210→      {
+   211→   211→        enableHighAccuracy: true,
+   212→   212→        timeout: 10000,
+   213→   213→        maximumAge: 0,
+   214→   214→      }
+   215→   215→    );
+   216→   216→  };
+   217→   217→
+   218→   218→  // Add employee
+   219→   219→  const handleAddEmployee = async () => {
+   220→   220→    if (!formData.userId || !formData.password || !formData.name || !formData.phone) {
+   221→   221→      setError('User ID, Password, Name, and Phone are required');
+   222→   222→      return;
+   223→   223→    }
+   224→   224→
+   225→   225→    setIsSaving(true);
+   226→   226→    setError('');
+   227→   227→
+   228→   228→    try {
+   229→   229→      const requestBody: Record<string, unknown> = {
+   230→   230→        ...formData,
+   231→   231→        salary: parseFloat(formData.salary) || 0,
+   232→   232→        adminId: user?.id,
+   233→   233→        organizationId: user?.organizationId,
+   234→   234→      };
+   235→   235→
+   236→   236→      // Only include geofence fields if enabled
+   237→   237→      if (formData.geofenceEnabled) {
+   238→   238→        requestBody.geofenceEnabled = true;
+   239→   239→        requestBody.geofenceLat = parseFloat(formData.geofenceLat) || null;
+   240→   240→        requestBody.geofenceLng = parseFloat(formData.geofenceLng) || null;
+   241→   241→        requestBody.geofenceRadius = parseFloat(formData.geofenceRadius) || 100;
+   242→   242→      } else {
+   243→   243→        requestBody.geofenceEnabled = false;
+   244→   244→        requestBody.geofenceLat = null;
+   245→   245→        requestBody.geofenceLng = null;
+   246→   246→        requestBody.geofenceRadius = null;
+   247→   247→      }
+   248→   248→
+   249→   249→      const response = await fetch('/api/employees', {
+   250→   250→        method: 'POST',
+   251→   251→        headers: { 'Content-Type': 'application/json' },
+   252→   252→        body: JSON.stringify(requestBody),
+   253→   253→      });
+   254→   254→
+   255→   255→      const data = await response.json();
+   256→   256→
+   257→   257→      if (!response.ok) {
+   258→   258→        throw new Error(data.error || 'Failed to add employee');
+   259→   259→      }
+   260→   260→
+   261→   261→      await fetchEmployees();
+   262→   262→      setShowAddDialog(false);
+   263→   263→      resetForm();
+   264→   264→    } catch (err: unknown) {
+   265→   265→      setError(err instanceof Error ? err.message : 'Failed to add employee');
+   266→   266→    } finally {
+   267→   267→      setIsSaving(false);
+   268→   268→    }
+   269→   269→  };
+   270→   270→
+   271→   271→  // Edit employee
+   272→   272→  const handleEditEmployee = async () => {
+   273→   273→    if (!selectedEmployee) return;
+   274→   274→    
+   275→   275→    if (!formData.userId || !formData.name || !formData.phone) {
+   276→   276→      setError('User ID, Name, and Phone are required');
+   277→   277→      return;
+   278→   278→    }
+   279→   279→
+   280→   280→    setIsSaving(true);
+   281→   281→    setError('');
+   282→   282→
+   283→   283→    try {
+   284→   284→      const requestBody: Record<string, unknown> = {
+   285→   285→        id: selectedEmployee.id,
+   286→   286→        ...formData,
+   287→   287→        salary: parseFloat(formData.salary) || 0,
+   288→   288→      };
+   289→   289→
+   290→   290→      // Only include geofence fields if enabled
+   291→   291→      if (formData.geofenceEnabled) {
+   292→   292→        requestBody.geofenceEnabled = true;
+   293→   293→        requestBody.geofenceLat = parseFloat(formData.geofenceLat) || null;
+   294→   294→        requestBody.geofenceLng = parseFloat(formData.geofenceLng) || null;
+   295→   295→        requestBody.geofenceRadius = parseFloat(formData.geofenceRadius) || 100;
+   296→   296→      } else {
+   297→   297→        requestBody.geofenceEnabled = false;
+   298→   298→        requestBody.geofenceLat = null;
+   299→   299→        requestBody.geofenceLng = null;
+   300→   300→        requestBody.geofenceRadius = null;
+   301→   301→      }
+   302→   302→
+   303→   303→      const response = await fetch('/api/employees', {
+   304→   304→        method: 'PUT',
+   305→   305→        headers: { 'Content-Type': 'application/json' },
+   306→   306→        body: JSON.stringify(requestBody),
+   307→   307→      });
+   308→   308→
+   309→   309→      const data = await response.json();
+   310→   310→
+   311→   311→      if (!response.ok) {
+   312→   312→        throw new Error(data.error || 'Failed to update employee');
+   313→   313→      }
+   314→   314→
+   315→   315→      await fetchEmployees();
+   316→   316→      setShowEditDialog(false);
+   317→   317→      resetForm();
+   318→   318→    } catch (err: unknown) {
+   319→   319→      setError(err instanceof Error ? err.message : 'Failed to update employee');
+   320→   320→    } finally {
+   321→   321→      setIsSaving(false);
+   322→   322→    }
+   323→   323→  };
+   324→   324→
+   325→   325→  // Delete employee
+   326→   326→  const handleDeleteEmployee = async () => {
+   327→   327→    if (!selectedEmployee) return;
+   328→   328→
+   329→   329→    setIsSaving(true);
+   330→   330→
+   331→   331→    try {
+   332→   332→      const response = await fetch(`/api/employees?id=${selectedEmployee.id}`, {
+   333→   333→        method: 'DELETE',
+   334→   334→      });
+   335→   335→
+   336→   336→      if (!response.ok) {
+   337→   337→        throw new Error('Failed to delete employee');
+   338→   338→      }
+   339→   339→
+   340→   340→      await fetchEmployees();
+   341→   341→      setShowDeleteDialog(false);
+   342→   342→      setSelectedEmployee(null);
+   343→   343→    } catch (error) {
+   344→   344→      console.error('Error deleting employee:', error);
+   345→   345→    } finally {
+   346→   346→      setIsSaving(false);
+   347→   347→    }
+   348→   348→  };
+   349→   349→
+   350→   350→  // Form fields component
+   351→   351→  const FormFields = ({ isEdit = false }: { isEdit?: boolean }) => (
+   352→   352→    <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+   353→   353→      {/* Profile Photo */}
+   354→   354→      <div className="flex flex-col items-center gap-3">
+   355→   355→        <div className="relative">
+   356→   356→          {formData.profilePhoto ? (
+   357→   357→            <img
+   358→   358→              src={formData.profilePhoto}
+   359→   359→              alt="Profile"
+   360→   360→              className="w-20 h-20 rounded-full object-cover border-2 border-emerald-500/30"
+   361→   361→            />
+   362→   362→          ) : (
+   363→   363→            <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center border-2 border-dashed border-muted-foreground/30">
+   364→   364→              <User className="h-8 w-8 text-muted-foreground/50" />
+   365→   365→            </div>
+   366→   366→          )}
+   367→   367→        </div>
+   368→   368→        <div className="flex gap-2">
+   369→   369→          <Button
+   370→   370→            type="button"
+   371→   371→            variant="outline"
+   372→   372→            size="sm"
+   373→   373→            onClick={() => setShowCameraCapture(true)}
+   374→   374→            className="text-xs"
+   375→   375→          >
+   376→   376→            <Camera className="h-3 w-3 mr-1" />
+   377→   377→            Camera
+   378→   378→          </Button>
+   379→   379→          <label className="cursor-pointer">
+   380→   380→            <Button type="button" variant="outline" size="sm" className="text-xs" asChild>
+   381→   381→              <span>
+   382→   382→                <Upload className="h-3 w-3 mr-1" />
+   383→   383→                Upload
+   384→   384→              </span>
+   385→   385→            </Button>
+   386→   386→            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+   387→   387→          </label>
+   388→   388→        </div>
+   389→   389→      </div>
+   390→   390→
+   391→   391→      {/* User ID & Password */}
+   392→   392→      <div className="grid grid-cols-2 gap-3">
+   393→   393→        <div className="space-y-2">
+   394→   394→          <Label>User ID *</Label>
+   395→   395→          <div className="relative">
+   396→   396→            <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   397→   397→            <Input
+   398→   398→              value={formData.userId}
+   399→   399→              onChange={(e) => setFormData(prev => ({ ...prev, userId: e.target.value.toLowerCase().replace(/\s+/g, '') }))}
+   400→   400→              className="pl-9"
+   401→   401→              placeholder="userid"
+   402→   402→            />
+   403→   403→          </div>
+   404→   404→        </div>
+   405→   405→        <div className="space-y-2">
+   406→   406→          <Label>{isEdit ? 'New Password' : 'Password *'}</Label>
+   407→   407→          <div className="relative">
+   408→   408→            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   409→   409→            <Input
+   410→   410→              type={showPassword ? 'text' : 'password'}
+   411→   411→              value={formData.password}
+   412→   412→              onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+   413→   413→              className="pl-9 pr-9"
+   414→   414→              placeholder="••••••"
+   415→   415→            />
+   416→   416→            <button
+   417→   417→              type="button"
+   418→   418→              onClick={() => setShowPassword(!showPassword)}
+   419→   419→              className="absolute right-3 top-1/2 -translate-y-1/2"
+   420→   420→            >
+   421→   421→              {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+   422→   422→            </button>
+   423→   423→          </div>
+   424→   424→        </div>
+   425→   425→      </div>
+   426→   426→
+   427→   427→      {/* Name & Phone */}
+   428→   428→      <div className="grid grid-cols-2 gap-3">
+   429→   429→        <div className="space-y-2">
+   430→   430→          <Label>Name *</Label>
+   431→   431→          <Input
+   432→   432→            value={formData.name}
+   433→   433→            onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+   434→   434→            placeholder="Full name"
+   435→   435→          />
+   436→   436→        </div>
+   437→   437→        <div className="space-y-2">
+   438→   438→          <Label>Phone *</Label>
+   439→   439→          <div className="relative">
+   440→   440→            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   441→   441→            <Input
+   442→   442→              value={formData.phone}
+   443→   443→              onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
+   444→   444→              className="pl-9"
+   445→   445→              placeholder="10-digit"
+   446→   446→              maxLength={10}
+   447→   447→            />
+   448→   448→          </div>
+   449→   449→        </div>
+   450→   450→      </div>
+   451→   451→
+   452→   452→      {/* Email */}
+   453→   453→      <div className="space-y-2">
+   454→   454→        <Label>Email</Label>
+   455→   455→        <div className="relative">
+   456→   456→          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   457→   457→          <Input
+   458→   458→            type="email"
+   459→   459→            value={formData.email}
+   460→   460→            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+   461→   461→            className="pl-9"
+   462→   462→            placeholder="email@example.com"
+   463→   463→          />
+   464→   464→        </div>
+   465→   465→      </div>
+   466→   466→
+   467→   467→      {/* Address */}
+   468→   468→      <div className="space-y-2">
+   469→   469→        <Label>Address</Label>
+   470→   470→        <div className="relative">
+   471→   471→          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   472→   472→          <Input
+   473→   473→            value={formData.address}
+   474→   474→            onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
+   475→   475→            className="pl-9"
+   476→   476→            placeholder="Address"
+   477→   477→          />
+   478→   478→        </div>
+   479→   479→      </div>
+   480→   480→
+   481→   481→      {/* Designation & Department */}
+   482→   482→      <div className="grid grid-cols-2 gap-3">
+   483→   483→        <div className="space-y-2">
+   484→   484→          <Label>Designation</Label>
+   485→   485→          <div className="relative">
+   486→   486→            <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   487→   487→            <Input
+   488→   488→              value={formData.designation}
+   489→   489→              onChange={(e) => setFormData(prev => ({ ...prev, designation: e.target.value }))}
+   490→   490→              className="pl-9"
+   491→   491→              placeholder="Position"
+   492→   492→            />
+   493→   493→          </div>
+   494→   494→        </div>
+   495→   495→        <div className="space-y-2">
+   496→   496→          <Label>Department</Label>
+   497→   497→          <div className="relative">
+   498→   498→            <Building className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   499→   499→            <Input
+   500→   500→              value={formData.department}
+   501→   501→              onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
+   502→   502→              className="pl-9"
+   503→   503→              placeholder="Department"
+   504→   504→            />
+   505→   505→          </div>
+   506→   506→        </div>
+   507→   507→      </div>
+   508→   508→
+   509→   509→      {/* Salary */}
+   510→   510→      <div className="space-y-2">
+   511→   511→        <Label>Salary (₹)</Label>
+   512→   512→        <div className="relative">
+   513→   513→          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   514→   514→          <Input
+   515→   515→            type="number"
+   516→   516→            value={formData.salary}
+   517→   517→            onChange={(e) => setFormData(prev => ({ ...prev, salary: e.target.value }))}
+   518→   518→            className="pl-9"
+   519→   519→            placeholder="0"
+   520→   520→          />
+   521→   521→        </div>
+   522→   522→      </div>
+   523→   523→
+   524→   524→      {/* Active Status */}
+   525→   525→      <div className="flex items-center gap-2">
+   526→   526→        <input
+   527→   527→          type="checkbox"
+   528→   528→          id="active"
+   529→   529→          checked={formData.active}
+   530→   530→          onChange={(e) => setFormData(prev => ({ ...prev, active: e.target.checked }))}
+   531→   531→          className="w-4 h-4 rounded border-input"
+   532→   532→        />
+   533→   533→        <Label htmlFor="active">Active Employee</Label>
+   534→   534→      </div>
+   535→   535→
+   536→   536→      {/* Geofence Settings */}
+   537→   537→      <div className="space-y-3 pt-4 border-t">
+   538→   538→        <div className="flex items-center justify-between">
+   539→   539→          <Label className="text-base font-medium">Geofence Settings</Label>
+   540→   540→          <div className="flex items-center gap-2">
+   541→   541→            <input
+   542→   542→              type="checkbox"
+   543→   543→              id="geofenceEnabled"
+   544→   544→              checked={formData.geofenceEnabled}
+   545→   545→              onChange={(e) => setFormData(prev => ({ ...prev, geofenceEnabled: e.target.checked }))}
+   546→   546→              className="w-4 h-4 rounded border-input"
+   547→   547→            />
+   548→   548→            <Label htmlFor="geofenceEnabled" className="cursor-pointer">Enable</Label>
+   549→   549→          </div>
+   550→   550→        </div>
+   551→   551→
+   552→   552→        {formData.geofenceEnabled && (
+   553→   553→          <div className="space-y-3 ml-2 pl-4 border-l-2 border-muted">
+   554→   554→            {/* Get Current Location Button */}
+   555→   555→            <Button
+   556→   556→              type="button"
+   557→   557→              variant="outline"
+   558→   558→              size="sm"
+   559→   559→              onClick={handleGetCurrentLocation}
+   560→   560→              className="w-full"
+   561→   561→            >
+   562→   562→              <Navigation className="h-4 w-4 mr-2" />
+   563→   563→              Get Current Location
+   564→   564→            </Button>
+   565→   565→
+   566→   566→            {/* Latitude & Longitude */}
+   567→   567→            <div className="grid grid-cols-2 gap-3">
+   568→   568→              <div className="space-y-2">
+   569→   569→                <Label className="text-sm">Latitude</Label>
+   570→   570→                <Input
+   571→   571→                  type="number"
+   572→   572→                  step="any"
+   573→   573→                  value={formData.geofenceLat}
+   574→   574→                  onChange={(e) => setFormData(prev => ({ ...prev, geofenceLat: e.target.value }))}
+   575→   575→                  placeholder="28.6139"
+   576→   576→                />
+   577→   577→              </div>
+   578→   578→              <div className="space-y-2">
+   579→   579→                <Label className="text-sm">Longitude</Label>
+   580→   580→                <Input
+   581→   581→                  type="number"
+   582→   582→                  step="any"
+   583→   583→                  value={formData.geofenceLng}
+   584→   584→                  onChange={(e) => setFormData(prev => ({ ...prev, geofenceLng: e.target.value }))}
+   585→   585→                  placeholder="77.2090"
+   586→   586→                />
+   587→   587→              </div>
+   588→   588→            </div>
+   589→   589→
+   590→   590→            {/* Radius */}
+   591→   591→            <div className="space-y-2">
+   592→   592→              <Label className="text-sm">Allowed Radius (meters)</Label>
+   593→   593→              <Input
+   594→   594→                type="number"
+   595→   595→                value={formData.geofenceRadius}
+   596→   596→                onChange={(e) => setFormData(prev => ({ ...prev, geofenceRadius: e.target.value }))}
+   597→   597→                placeholder="100"
+   598→   598→                min="10"
+   599→   599→                max="1000"
+   600→   600→              />
+   601→   601→              <p className="text-xs text-muted-foreground">
+   602→   602→                Employee can punch in/out within this radius from the specified location
+   603→   603→              </p>
+   604→   604→            </div>
+   605→   605→          </div>
+   606→   606→        )}
+   607→   607→      </div>
+   608→   608→
+   609→   609→      {/* Error */}
+   610→   610→      {error && (
+   611→   611→        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+   612→   612→          <AlertCircle className="h-4 w-4 text-red-500" />
+   613→   613→          <p className="text-sm text-red-500">{error}</p>
+   614→   614→        </div>
+   615→   615→      )}
+   616→   616→    </div>
+   617→   617→  );
+   618→   618→
+   619→   619→  return (
+   620→   620→    <div className="space-y-4">
+   621→   621→      {/* Header */}
+   622→   622→      <div className="flex items-center justify-between">
+   623→   623→        <div>
+   624→   624→          <h2 className="text-xl font-bold">Employees</h2>
+   625→   625→          <p className="text-sm text-muted-foreground">{employees.length} employees registered</p>
+   626→   626→        </div>
+   627→   627→        <Button onClick={openAddDialog} className="bg-emerald-500 hover:bg-emerald-600">
+   628→   628→          <Plus className="h-4 w-4 mr-2" />
+   629→   629→          Add Employee
+   630→   630→        </Button>
+   631→   631→      </div>
+   632→   632→
+   633→   633→      {/* Search */}
+   634→   634→      <div className="relative">
+   635→   635→        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   636→   636→        <Input
+   637→   637→          value={searchQuery}
+   638→   638→          onChange={(e) => setSearchQuery(e.target.value)}
+   639→   639→          placeholder="Search by name, phone, or user ID..."
+   640→   640→          className="pl-9"
+   641→   641→        />
+   642→   642→      </div>
+   643→   643→
+   644→   644→      {/* Employee List */}
+   645→   645→      {isLoading ? (
+   646→   646→        <div className="flex items-center justify-center py-12">
+   647→   647→          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+   648→   648→        </div>
+   649→   649→      ) : filteredEmployees.length === 0 ? (
+   650→   650→        <Card className="border-dashed">
+   651→   651→          <CardContent className="flex flex-col items-center justify-center py-12">
+   652→   652→            <User className="h-12 w-12 text-muted-foreground/50 mb-4" />
+   653→   653→            <p className="text-muted-foreground">No employees found</p>
+   654→   654→            <Button variant="link" onClick={openAddDialog}>Add your first employee</Button>
+   655→   655→          </CardContent>
+   656→   656→        </Card>
+   657→   657→      ) : (
+   658→   658→        <div className="grid gap-3">
+   659→   659→          {filteredEmployees.map((employee) => (
+   660→   660→            <motion.div
+   661→   661→              key={employee.id}
+   662→   662→              initial={{ opacity: 0, y: 10 }}
+   663→   663→              animate={{ opacity: 1, y: 0 }}
+   664→   664→              className="bg-card rounded-xl border p-4 flex items-center gap-4"
+   665→   665→            >
+   666→   666→              {/* Photo */}
+   667→   667→              {employee.profilePhoto ? (
+   668→   668→                <img 
+   669→   669→                  src={employee.profilePhoto} 
+   670→   670→                  alt={employee.name} 
+   671→   671→                  className="w-12 h-12 rounded-full object-cover"
+   672→   672→                />
+   673→   673→              ) : (
+   674→   674→                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+   675→   675→                  <User className="h-6 w-6 text-muted-foreground" />
+   676→   676→                </div>
+   677→   677→              )}
+   678→   678→
+   679→   679→              {/* Info */}
+   680→   680→              <div className="flex-1 min-w-0">
+   681→   681→                <div className="flex items-center gap-2">
+   682→   682→                  <p className="font-medium truncate">{employee.name}</p>
+   683→   683→                  {!employee.active && (
+   684→   684→                    <Badge variant="secondary" className="text-xs">Inactive</Badge>
+   685→   685→                  )}
+   686→   686→                </div>
+   687→   687→                <p className="text-sm text-muted-foreground">@{employee.userId}</p>
+   688→   688→                <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+   689→   689→                  <span>{employee.phone}</span>
+   690→   690→                  {employee.designation && <span>• {employee.designation}</span>}
+   691→   691→                </div>
+   692→   692→              </div>
+   693→   693→
+   694→   694→              {/* Salary */}
+   695→   695→              <div className="text-right hidden sm:block">
+   696→   696→                <p className="font-medium">₹{employee.salary.toLocaleString()}</p>
+   697→   697→                <p className="text-xs text-muted-foreground">/month</p>
+   698→   698→              </div>
+   699→   699→
+   700→   700→              {/* Actions */}
+   701→   701→              <div className="flex items-center gap-2">
+   702→   702→                <Button
+   703→   703→                  variant="ghost"
+   704→   704→                  size="icon"
+   705→   705→                  onClick={() => openEditDialog(employee)}
+   706→   706→                >
+   707→   707→                  <Edit2 className="h-4 w-4" />
+   708→   708→                </Button>
+   709→   709→                <Button
+   710→   710→                  variant="ghost"
+   711→   711→                  size="icon"
+   712→   712→                  onClick={() => openDeleteDialog(employee)}
+   713→   713→                  className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+   714→   714→                >
+   715→   715→                  <Trash2 className="h-4 w-4" />
+   716→   716→                </Button>
+   717→   717→              </div>
+   718→   718→            </motion.div>
+   719→   719→          ))}
+   720→   720→        </div>
+   721→   721→      )}
+   722→   722→
+   723→   723→      {/* Add Dialog */}
+   724→   724→      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+   725→   725→        <DialogContent className="max-w-md">
+   726→   726→          <DialogHeader>
+   727→   727→            <DialogTitle>Add New Employee</DialogTitle>
+   728→   728→          </DialogHeader>
+   729→   729→          <FormFields />
+   730→   730→          <div className="flex gap-2 pt-4">
+   731→   731→            <Button variant="outline" onClick={() => setShowAddDialog(false)} className="flex-1">
+   732→   732→              Cancel
+   733→   733→            </Button>
+   734→   734→            <Button onClick={handleAddEmployee} disabled={isSaving} className="flex-1 bg-emerald-500 hover:bg-emerald-600">
+   735→   735→              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add Employee'}
+   736→   736→            </Button>
+   737→   737→          </div>
+   738→   738→        </DialogContent>
+   739→   739→      </Dialog>
+   740→   740→
+   741→   741→      {/* Edit Dialog */}
+   742→   742→      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+   743→   743→        <DialogContent className="max-w-md">
+   744→   744→          <DialogHeader>
+   745→   745→            <DialogTitle>Edit Employee</DialogTitle>
+   746→   746→          </DialogHeader>
+   747→   747→          <FormFields isEdit />
+   748→   748→          <div className="flex gap-2 pt-4">
+   749→   749→            <Button variant="outline" onClick={() => setShowEditDialog(false)} className="flex-1">
+   750→   750→              Cancel
+   751→   751→            </Button>
+   752→   752→            <Button onClick={handleEditEmployee} disabled={isSaving} className="flex-1 bg-emerald-500 hover:bg-emerald-600">
+   753→   753→              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save Changes'}
+   754→   754→            </Button>
+   755→   755→          </div>
+   756→   756→        </DialogContent>
+   757→   757→      </Dialog>
+   758→   758→
+   759→   759→      {/* Delete Dialog */}
+   760→   760→      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+   761→   761→        <AlertDialogContent>
+   762→   762→          <AlertDialogHeader>
+   763→   763→            <AlertDialogTitle>Delete Employee</AlertDialogTitle>
+   764→   764→            <AlertDialogDescription>
+   765→   765→              Are you sure you want to delete <strong>{selectedEmployee?.name}</strong>?
+   766→   766→              This action cannot be undone. All attendance and leave records will also be deleted.
+   767→   767→            </AlertDialogDescription>
+   768→   768→          </AlertDialogHeader>
+   769→   769→          <AlertDialogFooter>
+   770→   770→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   771→   771→            <AlertDialogAction
+   772→   772→              onClick={handleDeleteEmployee}
+   773→   773→              className="bg-red-500 hover:bg-red-600"
+   774→   774→            >
+   775→   775→              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+   776→   776→            </AlertDialogAction>
+   777→   777→          </AlertDialogFooter>
+   778→   778→        </AlertDialogContent>
+   779→   779→      </AlertDialog>
+   780→   780→
+   781→   781→      {/* Camera Capture Dialog */}
+   782→   782→      <CameraCapture
+   783→   783→        open={showCameraCapture}
+   784→   784→        onCapture={handleCameraCapture}
+   785→   785→        onClose={() => setShowCameraCapture(false)}
+   786→   786→        title="📸 Capture Profile Photo"
+   787→   787→      />
+   788→   788→    </div>
+   789→   789→  );
+   790→   790→}
+   791→   791→

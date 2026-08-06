@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useLanguageStore } from '@/lib/i18n';
+import { fetchJSON } from '@/lib/utils';
 
 interface Holiday {
   id: string;
@@ -191,14 +192,13 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
       setError(null);
       const filterParam = statusFilter || activeFilter;
       const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}`;
-      const response = await fetch(url);
-      const data = await response.json();
+      const data = await fetchJSON(url);
 
-      if (data.success) {
+      if (data?.success) {
         setHolidays(data.holidays || []);
         setStats(data.stats || null);
       } else {
-        setError(data.error || t.holiday.failedFetchHolidays);
+        setError(data?.error || t.holiday.failedFetchHolidays);
       }
     } catch (err) {
       console.error('Error fetching holidays:', err);
@@ -226,14 +226,13 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     setError(null);
 
     try {
-      const response = await fetch(`/api/holidays/sync?year=${syncYear}`);
-      const data = await response.json();
+      const data = await fetchJSON(`/api/holidays/sync?year=${syncYear}`);
 
-      if (data.success) {
+      if (data?.success) {
         setSyncPreview(data);
         setHasGoogleKey(data.hasGoogleKey || false);
       } else {
-        setError(data.error || 'Failed to preview holidays');
+        setError(data?.error || 'Failed to preview holidays');
       }
     } catch (err) {
       console.error('Error previewing sync:', err);
@@ -254,22 +253,20 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     setError(null);
 
     try {
-      const response = await fetch('/api/holidays/sync', {
+      const data = await fetchJSON('/api/holidays/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId, adminId, year: syncYear }),
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data?.success) {
         const sourceName = data.sourceLabel || getSourceDisplayName(data.source);
         setSuccess(fallbackT.syncNewDrafts(data.added || 0, sourceName));
         setSyncPreview(null);
         setHasGoogleKey(data.source === 'google-calendar');
         fetchHolidays(activeFilter);
       } else {
-        setError(data.error || 'Failed to sync holidays');
+        setError(data?.error || 'Failed to sync holidays');
       }
     } catch (err) {
       console.error('Error syncing holidays:', err);
@@ -287,22 +284,20 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     setError(null);
 
     try {
-      const response = await fetch('/api/holidays', {
+      const data = await fetchJSON('/api/holidays', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId, action, year: syncYear }),
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data?.success) {
         const actionLabel = action === 'publish-all'
           ? `${data.count} holidays published`
           : `${data.count} draft holidays deleted`;
         setSuccess(actionLabel);
         fetchHolidays(activeFilter);
       } else {
-        setError(data.error || 'Bulk action failed');
+        setError(data?.error || 'Bulk action failed');
       }
     } catch (err) {
       console.error('Error in bulk action:', err);
@@ -329,22 +324,20 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
         ? { id: editingHoliday.id, ...formData }
         : { organizationId, createdBy: adminId, ...formData };
 
-      const response = await fetch(url, {
+      const data = await fetchJSON(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data?.success) {
         setSuccess(editingHoliday ? t.holiday.holidayUpdated : t.holiday.holidayAdded);
         setShowAddDialog(false);
         setEditingHoliday(null);
         setFormData({ ...emptyFormData });
         fetchHolidays(activeFilter);
       } else {
-        setError(data.error || t.holiday.failedSaveHoliday);
+        setError(data?.error || t.holiday.failedSaveHoliday);
       }
     } catch (err) {
       console.error('Error saving holiday:', err);
@@ -357,7 +350,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   // Quick toggle (allowPunch, isPaid, etc.) — directly update a single field
   const handleQuickToggle = async (holiday: Holiday, field: string, value: boolean) => {
     try {
-      const response = await fetch('/api/holidays', {
+      const data = await fetchJSON('/api/holidays', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -376,9 +369,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
           status: holiday.status,
         }),
       });
-
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         fetchHolidays(activeFilter);
         const labelMap: Record<string, string> = {
           allowPunch: t.holiday.allowAttendance,
@@ -398,7 +389,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const handleTogglePublish = async (holiday: Holiday) => {
     const newStatus = holiday.status === 'active' ? 'draft' : 'active';
     try {
-      const response = await fetch('/api/holidays', {
+      const data = await fetchJSON('/api/holidays', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -417,9 +408,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
           status: newStatus,
         }),
       });
-
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         setSuccess(newStatus === 'active'
           ? `${holiday.holidayName} - ${t.holiday.holidayPublished}`
           : `${holiday.holidayName} - ${t.holiday.holidayHidden}`
@@ -436,18 +425,16 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     if (!deletingHoliday) return;
 
     try {
-      const response = await fetch(`/api/holidays?id=${deletingHoliday.id}`, {
+      const data = await fetchJSON(`/api/holidays?id=${deletingHoliday.id}`, {
         method: 'DELETE',
       });
 
-      const data = await response.json();
-
-      if (data.success) {
+      if (data?.success) {
         setSuccess(t.holiday.holidayDeleted);
         setDeletingHoliday(null);
         fetchHolidays(activeFilter);
       } else {
-        setError(data.error || t.holiday.failedDeleteHoliday);
+        setError(data?.error || t.holiday.failedDeleteHoliday);
       }
     } catch (err) {
       console.error('Error deleting holiday:', err);

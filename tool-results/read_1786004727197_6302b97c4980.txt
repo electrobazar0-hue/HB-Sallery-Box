@@ -1,0 +1,1207 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect } from 'react';
+     4→import { motion, AnimatePresence } from 'framer-motion';
+     5→import {
+     6→  Calendar, Plus, RefreshCw, Trash2, Edit, Check,
+     7→  Sun, PartyPopper, Building, AlertTriangle, Clock,
+     8→  ChevronLeft, ChevronRight, Download,
+     9→  Eye, EyeOff, Shield, CircleDollarSign, CircleDot,
+    10→  HandCoins, CalendarDays, Ban, Send, ToggleLeft, ToggleRight,
+    11→  Info, X, Radio
+    12→} from 'lucide-react';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    15→import { Input } from '@/components/ui/input';
+    16→import { Label } from '@/components/ui/label';
+    17→import { Badge } from '@/components/ui/badge';
+    18→import { Alert, AlertDescription } from '@/components/ui/alert';
+    19→import {
+    20→  Dialog,
+    21→  DialogContent,
+    22→  DialogHeader,
+    23→  DialogTitle,
+    24→  DialogDescription,
+    25→} from '@/components/ui/dialog';
+    26→import {
+    27→  Select,
+    28→  SelectContent,
+    29→  SelectItem,
+    30→  SelectTrigger,
+    31→  SelectValue,
+    32→} from '@/components/ui/select';
+    33→import { ScrollArea } from '@/components/ui/scroll-area';
+    34→import { Switch } from '@/components/ui/switch';
+    35→import { Separator } from '@/components/ui/separator';
+    36→import {
+    37→  AlertDialog,
+    38→  AlertDialogAction,
+    39→  AlertDialogCancel,
+    40→  AlertDialogContent,
+    41→  AlertDialogDescription,
+    42→  AlertDialogFooter,
+    43→  AlertDialogHeader,
+    44→  AlertDialogTitle,
+    45→} from '@/components/ui/alert-dialog';
+    46→import { Textarea } from '@/components/ui/textarea';
+    47→import { useLanguageStore } from '@/lib/i18n';
+    48→
+    49→interface Holiday {
+    50→  id: string;
+    51→  holidayName: string;
+    52→  date: string;
+    53→  holidayType: string;
+    54→  description?: string;
+    55→  allowPunch: boolean;
+    56→  isHalfDay: boolean;
+    57→  isPaid: boolean;
+    58→  isOptional: boolean;
+    59→  compensatoryOff: boolean;
+    60→  isRecurring: boolean;
+    61→  recurringDay?: number;
+    62→  status: string;
+    63→  syncSource?: string;
+    64→}
+    65→
+    66→interface HolidayStats {
+    67→  totalHolidays: number;
+    68→  activeHolidays: number;
+    69→  draftHolidays: number;
+    70→  paidHolidays: number;
+    71→  halfDayHolidays: number;
+    72→  optionalHolidays: number;
+    73→  compOffHolidays: number;
+    74→}
+    75→
+    76→interface SyncPreview {
+    77→  holidays: Array<{ date: string; name: string; type: string }>;
+    78→  count: number;
+    79→  year: number;
+    80→  source: string;
+    81→  hasGoogleKey: boolean;
+    82→}
+    83→
+    84→interface HolidayManagementProps {
+    85→  organizationId: string;
+    86→  adminId: string;
+    87→}
+    88→
+    89→const holidayTypes = [
+    90→  { value: 'national', label: 'National', icon: Sun, color: 'bg-orange-500' },
+    91→  { value: 'festival', label: 'Festival', icon: PartyPopper, color: 'bg-purple-500' },
+    92→  { value: 'weekly', label: 'Weekly Off', icon: Clock, color: 'bg-blue-500' },
+    93→  { value: 'company', label: 'Company', icon: Building, color: 'bg-emerald-500' },
+    94→  { value: 'emergency', label: 'Emergency', icon: AlertTriangle, color: 'bg-red-500' },
+    95→];
+    96→
+    97→const weekDays = [
+    98→  { value: 0, label: 'Sunday' },
+    99→  { value: 1, label: 'Monday' },
+   100→  { value: 2, label: 'Tuesday' },
+   101→  { value: 3, label: 'Wednesday' },
+   102→  { value: 4, label: 'Thursday' },
+   103→  { value: 5, label: 'Friday' },
+   104→  { value: 6, label: 'Saturday' },
+   105→];
+   106→
+   107→const syncYears = [2024, 2025, 2026, 2027];
+   108→
+   109→const emptyFormData = {
+   110→  holidayName: '',
+   111→  date: '',
+   112→  holidayType: 'company',
+   113→  description: '',
+   114→  allowPunch: false,
+   115→  isHalfDay: false,
+   116→  isPaid: true,
+   117→  isOptional: false,
+   118→  compensatoryOff: false,
+   119→  isRecurring: false,
+   120→  recurringDay: 0,
+   121→  status: 'active',
+   122→};
+   123→
+   124→// Extended translation keys (fallbacks if not in i18n store)
+   125→const fallbackT = {
+   126→  syncHolidays: 'Sync Holidays',
+   127→  syncPreviewLoading: 'Checking holidays...',
+   128→  syncPreviewCount: (count: number, source: string) => `${count} holidays found via ${source}`,
+   129→  syncNewDrafts: (count: number, source: string) => `${count} new holidays added as draft (Source: ${source})`,
+   130→  googleConnected: 'Google Calendar: Connected',
+   131→  googleNotConnected: 'Google Calendar: Not connected (using Nager.Date)',
+   132→  publishAll: 'Publish All',
+   133→  deleteDrafts: 'Delete Drafts',
+   134→  draftBanner: (count: number) => `${count} holiday${count === 1 ? '' : 's'} in draft`,
+   135→  published: 'Published',
+   136→  all: 'All',
+   137→  sourceGoogle: 'Google',
+   138→  sourceNager: 'Nager',
+   139→  sourceStatic: 'Static',
+   140→  year: 'Year',
+   141→  previewSync: 'Preview sync before importing',
+   142→};
+   143→
+   144→function getSyncSourceLabel(source?: string | null): string | null {
+   145→  if (!source) return null;
+   146→  if (source === 'google-calendar') return 'Google';
+   147→  if (source === 'nager-date') return 'Nager';
+   148→  if (source === 'static-database') return 'Static';
+   149→  return source;
+   150→}
+   151→
+   152→function getSourceDisplayName(source: string): string {
+   153→  if (source === 'google-calendar') return 'Google Calendar';
+   154→  if (source === 'nager-date') return 'Nager.Date';
+   155→  if (source === 'static-database') return 'Static Database';
+   156→  return source;
+   157→}
+   158→
+   159→export function HolidayManagement({ organizationId, adminId }: HolidayManagementProps) {
+   160→  const { t } = useLanguageStore();
+   161→  const [holidays, setHolidays] = useState<Holiday[]>([]);
+   162→  const [stats, setStats] = useState<HolidayStats | null>(null);
+   163→  const [isLoading, setIsLoading] = useState(true);
+   164→  const [isSyncing, setIsSyncing] = useState(false);
+   165→  const [showAddDialog, setShowAddDialog] = useState(false);
+   166→  const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
+   167→  const [deletingHoliday, setDeletingHoliday] = useState<Holiday | null>(null);
+   168→  const [error, setError] = useState<string | null>(null);
+   169→  const [success, setSuccess] = useState<string | null>(null);
+   170→  const [currentMonth, setCurrentMonth] = useState(new Date());
+   171→
+   172→  const [formData, setFormData] = useState({ ...emptyFormData });
+   173→
+   174→  // New states for sync, filter, bulk actions
+   175→  const [syncYear, setSyncYear] = useState(new Date().getFullYear());
+   176→  const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
+   177→  const [syncPreviewLoading, setSyncPreviewLoading] = useState(false);
+   178→  const [hasGoogleKey, setHasGoogleKey] = useState(false);
+   179→  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'draft'>('all');
+   180→  const [isBulkAction, setIsBulkAction] = useState(false);
+   181→
+   182→  // Fetch holidays
+   183→  const fetchHolidays = async (statusFilter?: string) => {
+   184→    if (!organizationId) {
+   185→      setError(t.holiday.organizationNotFound);
+   186→      setIsLoading(false);
+   187→      return;
+   188→    }
+   189→
+   190→    try {
+   191→      setError(null);
+   192→      const filterParam = statusFilter || activeFilter;
+   193→      const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}`;
+   194→      const response = await fetch(url);
+   195→      const data = await response.json();
+   196→
+   197→      if (data.success) {
+   198→        setHolidays(data.holidays || []);
+   199→        setStats(data.stats || null);
+   200→      } else {
+   201→        setError(data.error || t.holiday.failedFetchHolidays);
+   202→      }
+   203→    } catch (err) {
+   204→      console.error('Error fetching holidays:', err);
+   205→      setError(t.holiday.failedFetchConnection);
+   206→    } finally {
+   207→      setIsLoading(false);
+   208→    }
+   209→  };
+   210→
+   211→  useEffect(() => {
+   212→    fetchHolidays();
+   213→  }, [organizationId]);
+   214→
+   215→  // Re-fetch when filter changes
+   216→  useEffect(() => {
+   217→    if (organizationId) {
+   218→      fetchHolidays(activeFilter);
+   219→    }
+   220→  }, [activeFilter, organizationId]);
+   221→
+   222→  // Preview sync (GET)
+   223→  const handleSyncPreview = async () => {
+   224→    setSyncPreviewLoading(true);
+   225→    setSyncPreview(null);
+   226→    setError(null);
+   227→
+   228→    try {
+   229→      const response = await fetch(`/api/holidays/sync?year=${syncYear}`);
+   230→      const data = await response.json();
+   231→
+   232→      if (data.success) {
+   233→        setSyncPreview(data);
+   234→        setHasGoogleKey(data.hasGoogleKey || false);
+   235→      } else {
+   236→        setError(data.error || 'Failed to preview holidays');
+   237→      }
+   238→    } catch (err) {
+   239→      console.error('Error previewing sync:', err);
+   240→      setError(t.holiday.failedFetchConnection);
+   241→    } finally {
+   242→      setSyncPreviewLoading(false);
+   243→    }
+   244→  };
+   245→
+   246→  // Sync with year selector (POST)
+   247→  const handleSyncHolidays = async () => {
+   248→    if (!organizationId) {
+   249→      setError(t.holiday.organizationNotFound);
+   250→      return;
+   251→    }
+   252→
+   253→    setIsSyncing(true);
+   254→    setError(null);
+   255→
+   256→    try {
+   257→      const response = await fetch('/api/holidays/sync', {
+   258→        method: 'POST',
+   259→        headers: { 'Content-Type': 'application/json' },
+   260→        body: JSON.stringify({ organizationId, adminId, year: syncYear }),
+   261→      });
+   262→
+   263→      const data = await response.json();
+   264→
+   265→      if (data.success) {
+   266→        const sourceName = data.sourceLabel || getSourceDisplayName(data.source);
+   267→        setSuccess(fallbackT.syncNewDrafts(data.added || 0, sourceName));
+   268→        setSyncPreview(null);
+   269→        setHasGoogleKey(data.source === 'google-calendar');
+   270→        fetchHolidays(activeFilter);
+   271→      } else {
+   272→        setError(data.error || 'Failed to sync holidays');
+   273→      }
+   274→    } catch (err) {
+   275→      console.error('Error syncing holidays:', err);
+   276→      setError(t.holiday.failedFetchConnection);
+   277→    } finally {
+   278→      setIsSyncing(false);
+   279→    }
+   280→  };
+   281→
+   282→  // Bulk actions (PATCH)
+   283→  const handleBulkAction = async (action: string) => {
+   284→    if (!organizationId) return;
+   285→
+   286→    setIsBulkAction(true);
+   287→    setError(null);
+   288→
+   289→    try {
+   290→      const response = await fetch('/api/holidays', {
+   291→        method: 'PATCH',
+   292→        headers: { 'Content-Type': 'application/json' },
+   293→        body: JSON.stringify({ organizationId, action, year: syncYear }),
+   294→      });
+   295→
+   296→      const data = await response.json();
+   297→
+   298→      if (data.success) {
+   299→        const actionLabel = action === 'publish-all'
+   300→          ? `${data.count} holidays published`
+   301→          : `${data.count} draft holidays deleted`;
+   302→        setSuccess(actionLabel);
+   303→        fetchHolidays(activeFilter);
+   304→      } else {
+   305→        setError(data.error || 'Bulk action failed');
+   306→      }
+   307→    } catch (err) {
+   308→      console.error('Error in bulk action:', err);
+   309→      setError(t.holiday.failedFetchConnection);
+   310→    } finally {
+   311→      setIsBulkAction(false);
+   312→    }
+   313→  };
+   314→
+   315→  // Add/Edit holiday
+   316→  const handleSaveHoliday = async () => {
+   317→    if (!formData.holidayName || !formData.date) {
+   318→      setError(t.holiday.holidayNameDateRequired);
+   319→      return;
+   320→    }
+   321→
+   322→    setIsLoading(true);
+   323→    setError(null);
+   324→
+   325→    try {
+   326→      const url = '/api/holidays';
+   327→      const method = editingHoliday ? 'PUT' : 'POST';
+   328→      const body = editingHoliday
+   329→        ? { id: editingHoliday.id, ...formData }
+   330→        : { organizationId, createdBy: adminId, ...formData };
+   331→
+   332→      const response = await fetch(url, {
+   333→        method,
+   334→        headers: { 'Content-Type': 'application/json' },
+   335→        body: JSON.stringify(body),
+   336→      });
+   337→
+   338→      const data = await response.json();
+   339→
+   340→      if (data.success) {
+   341→        setSuccess(editingHoliday ? t.holiday.holidayUpdated : t.holiday.holidayAdded);
+   342→        setShowAddDialog(false);
+   343→        setEditingHoliday(null);
+   344→        setFormData({ ...emptyFormData });
+   345→        fetchHolidays(activeFilter);
+   346→      } else {
+   347→        setError(data.error || t.holiday.failedSaveHoliday);
+   348→      }
+   349→    } catch (err) {
+   350→      console.error('Error saving holiday:', err);
+   351→      setError(t.holiday.failedSaveTryAgain);
+   352→    } finally {
+   353→      setIsLoading(false);
+   354→    }
+   355→  };
+   356→
+   357→  // Quick toggle (allowPunch, isPaid, etc.) — directly update a single field
+   358→  const handleQuickToggle = async (holiday: Holiday, field: string, value: boolean) => {
+   359→    try {
+   360→      const response = await fetch('/api/holidays', {
+   361→        method: 'PUT',
+   362→        headers: { 'Content-Type': 'application/json' },
+   363→        body: JSON.stringify({
+   364→          id: holiday.id,
+   365→          holidayName: holiday.holidayName,
+   366→          date: holiday.date,
+   367→          holidayType: holiday.holidayType,
+   368→          description: holiday.description || '',
+   369→          allowPunch: field === 'allowPunch' ? value : holiday.allowPunch,
+   370→          isHalfDay: field === 'isHalfDay' ? value : holiday.isHalfDay,
+   371→          isPaid: field === 'isPaid' ? value : holiday.isPaid,
+   372→          isOptional: field === 'isOptional' ? value : holiday.isOptional,
+   373→          compensatoryOff: field === 'compensatoryOff' ? value : holiday.compensatoryOff,
+   374→          isRecurring: holiday.isRecurring,
+   375→          recurringDay: holiday.recurringDay || 0,
+   376→          status: holiday.status,
+   377→        }),
+   378→      });
+   379→
+   380→      const data = await response.json();
+   381→      if (data.success) {
+   382→        fetchHolidays(activeFilter);
+   383→        const labelMap: Record<string, string> = {
+   384→          allowPunch: t.holiday.allowAttendance,
+   385→          isHalfDay: t.holiday.halfDay,
+   386→          isPaid: t.holiday.paid,
+   387→          isOptional: t.holiday.optionalLabel,
+   388→          compensatoryOff: t.holiday.compOffLabel,
+   389→        };
+   390→        setSuccess(`${holiday.holidayName}: ${labelMap[field] || field} ${value ? t.holiday.enabled : t.holiday.disabled}`);
+   391→      }
+   392→    } catch (err) {
+   393→      setError(t.holiday.failedUpdateHoliday);
+   394→    }
+   395→  };
+   396→
+   397→  // Toggle publish/draft status (using simple PUT with id + status)
+   398→  const handleTogglePublish = async (holiday: Holiday) => {
+   399→    const newStatus = holiday.status === 'active' ? 'draft' : 'active';
+   400→    try {
+   401→      const response = await fetch('/api/holidays', {
+   402→        method: 'PUT',
+   403→        headers: { 'Content-Type': 'application/json' },
+   404→        body: JSON.stringify({
+   405→          id: holiday.id,
+   406→          holidayName: holiday.holidayName,
+   407→          date: holiday.date,
+   408→          holidayType: holiday.holidayType,
+   409→          description: holiday.description || '',
+   410→          allowPunch: holiday.allowPunch,
+   411→          isHalfDay: holiday.isHalfDay,
+   412→          isPaid: holiday.isPaid,
+   413→          isOptional: holiday.isOptional,
+   414→          compensatoryOff: holiday.compensatoryOff,
+   415→          isRecurring: holiday.isRecurring,
+   416→          recurringDay: holiday.recurringDay || 0,
+   417→          status: newStatus,
+   418→        }),
+   419→      });
+   420→
+   421→      const data = await response.json();
+   422→      if (data.success) {
+   423→        setSuccess(newStatus === 'active'
+   424→          ? `${holiday.holidayName} - ${t.holiday.holidayPublished}`
+   425→          : `${holiday.holidayName} - ${t.holiday.holidayHidden}`
+   426→        );
+   427→        fetchHolidays(activeFilter);
+   428→      }
+   429→    } catch (err) {
+   430→      setError(t.holiday.failedUpdateHoliday);
+   431→    }
+   432→  };
+   433→
+   434→  // Delete holiday
+   435→  const handleDeleteHoliday = async () => {
+   436→    if (!deletingHoliday) return;
+   437→
+   438→    try {
+   439→      const response = await fetch(`/api/holidays?id=${deletingHoliday.id}`, {
+   440→        method: 'DELETE',
+   441→      });
+   442→
+   443→      const data = await response.json();
+   444→
+   445→      if (data.success) {
+   446→        setSuccess(t.holiday.holidayDeleted);
+   447→        setDeletingHoliday(null);
+   448→        fetchHolidays(activeFilter);
+   449→      } else {
+   450→        setError(data.error || t.holiday.failedDeleteHoliday);
+   451→      }
+   452→    } catch (err) {
+   453→      console.error('Error deleting holiday:', err);
+   454→      setError(t.holiday.failedDeleteTryAgain);
+   455→    }
+   456→  };
+   457→
+   458→  // Open edit dialog with holiday data
+   459→  const openEditDialog = (holiday: Holiday) => {
+   460→    setEditingHoliday(holiday);
+   461→    setFormData({
+   462→      holidayName: holiday.holidayName,
+   463→      date: holiday.date,
+   464→      holidayType: holiday.holidayType,
+   465→      description: holiday.description || '',
+   466→      allowPunch: holiday.allowPunch,
+   467→      isHalfDay: holiday.isHalfDay,
+   468→      isPaid: holiday.isPaid,
+   469→      isOptional: holiday.isOptional,
+   470→      compensatoryOff: holiday.compensatoryOff,
+   471→      isRecurring: holiday.isRecurring,
+   472→      recurringDay: holiday.recurringDay || 0,
+   473→      status: holiday.status || 'active',
+   474→    });
+   475→    setShowAddDialog(true);
+   476→  };
+   477→
+   478→  // Get holiday type info
+   479→  const getHolidayTypeInfo = (type: string) => {
+   480→    return holidayTypes.find(ht => ht.value === type) || holidayTypes[3];
+   481→  };
+   482→
+   483→  // Calendar navigation
+   484→  const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+   485→  const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+   486→
+   487→  // Generate calendar days
+   488→  const getCalendarDays = () => {
+   489→    const year = currentMonth.getFullYear();
+   490→    const month = currentMonth.getMonth();
+   491→    const firstDay = new Date(year, month, 1);
+   492→    const lastDay = new Date(year, month + 1, 0);
+   493→    const daysInMonth = lastDay.getDate();
+   494→    const startingDay = firstDay.getDay();
+   495→    const today = new Date().toISOString().split('T')[0];
+   496→
+   497→    const days: Array<{ day: number; date: string; holiday?: Holiday | undefined; isToday: boolean } | null> = [];
+   498→    for (let i = 0; i < startingDay; i++) days.push(null);
+   499→    for (let i = 1; i <= daysInMonth; i++) {
+   500→      const date = new Date(year, month, i);
+   501→      const dateStr = date.toISOString().split('T')[0];
+   502→      const holiday = holidays.find(h => h.date === dateStr);
+   503→      const isToday = dateStr === today;
+   504→      days.push({ day: i, date: dateStr, holiday, isToday });
+   505→    }
+   506→    return days;
+   507→  };
+   508→
+   509→  // Get upcoming holidays
+   510→  const getUpcomingHolidays = () => {
+   511→    const today = new Date().toISOString().split('T')[0];
+   512→    return holidays
+   513→      .filter(h => h.date >= today && h.status === 'active')
+   514→      .sort((a, b) => a.date.localeCompare(b.date))
+   515→      .slice(0, 5);
+   516→  };
+   517→
+   518→  // Clear messages after 5 seconds
+   519→  useEffect(() => {
+   520→    if (error || success) {
+   521→      const timer = setTimeout(() => { setError(null); setSuccess(null); }, 5000);
+   522→      return () => clearTimeout(timer);
+   523→    }
+   524→  }, [error, success]);
+   525→
+   526→  // Filter tabs data
+   527→  const filterTabs = [
+   528→    { key: 'all' as const, label: (t.holiday as Record<string, string>).all || fallbackT.all, count: holidays.length },
+   529→    { key: 'active' as const, label: fallbackT.published, count: stats?.activeHolidays || 0 },
+   530→    { key: 'draft' as const, label: t.holiday.draft, count: stats?.draftHolidays || 0 },
+   531→  ];
+   532→
+   533→  return (
+   534→    <div className="space-y-4">
+   535→      {/* Header Actions */}
+   536→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   537→        <div className="flex flex-col sm:flex-row gap-2">
+   538→          <Button
+   539→            onClick={() => {
+   540→              setEditingHoliday(null);
+   541→              setFormData({ ...emptyFormData });
+   542→              setShowAddDialog(true);
+   543→            }}
+   544→            className="bg-gradient-to-r from-emerald-500 to-teal-600 w-full sm:w-auto"
+   545→          >
+   546→            <Plus className="h-4 w-4 mr-2" />
+   547→            {t.holiday.addHoliday}
+   548→          </Button>
+   549→        </div>
+   550→        <div className="flex items-center gap-2 flex-wrap">
+   551→          <Badge variant="secondary" className="text-xs">
+   552→            <Eye className="h-3 w-3 mr-1" />
+   553→            {stats?.activeHolidays || 0} {t.holiday.employeesCanSee}
+   554→          </Badge>
+   555→          <Badge variant="outline" className="text-xs border-dashed">
+   556→            <EyeOff className="h-3 w-3 mr-1" />
+   557→            {stats?.draftHolidays || 0} {t.holiday.draft}
+   558→          </Badge>
+   559→        </div>
+   560→      </div>
+   561→
+   562→      {/* Sync Holidays Section */}
+   563→      <Card className="border-0 shadow-sm bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+   564→        <CardContent className="p-3 sm:p-4">
+   565→          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+   566→            <div className="flex-1 min-w-0">
+   567→              <h3 className="text-sm font-semibold flex items-center gap-2">
+   568→                <Download className="h-4 w-4 text-emerald-500" />
+   569→                {fallbackT.syncHolidays}
+   570→              </h3>
+   571→              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+   572→                {t.holiday.syncIndianHolidays} {fallbackT.previewSync}
+   573→              </p>
+   574→              {/* Google Calendar connection status */}
+   575→              {syncPreview && (
+   576→                <div className="flex items-center gap-1.5 mt-1.5">
+   577→                  {syncPreview.hasGoogleKey ? (
+   578→                    <span className="text-[10px] sm:text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+   579→                      <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+   580→                      {fallbackT.googleConnected} 🟢
+   581→                    </span>
+   582→                  ) : (
+   583→                    <span className="text-[10px] sm:text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+   584→                      <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
+   585→                      {fallbackT.googleNotConnected} 🟡
+   586→                    </span>
+   587→                  )}
+   588→                </div>
+   589→              )}
+   590→            </div>
+   591→            <div className="flex items-center gap-2">
+   592→              {/* Year Selector */}
+   593→              <Select value={syncYear.toString()} onValueChange={(val) => { setSyncYear(parseInt(val)); setSyncPreview(null); }}>
+   594→                <SelectTrigger className="w-[90px] h-9 text-sm">
+   595→                  <CalendarDays className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+   596→                  <SelectValue />
+   597→                </SelectTrigger>
+   598→                <SelectContent>
+   599→                  {syncYears.map(y => (
+   600→                    <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+   601→                  ))}
+   602→                </SelectContent>
+   603→              </Select>
+   604→              {/* Preview / Sync buttons */}
+   605→              {!syncPreview ? (
+   606→                <Button
+   607→                  variant="outline"
+   608→                  size="sm"
+   609→                  onClick={handleSyncPreview}
+   610→                  disabled={syncPreviewLoading}
+   611→                  className="h-9"
+   612→                >
+   613→                  {syncPreviewLoading ? (
+   614→                    <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+   615→                  ) : (
+   616→                    <Eye className="h-3.5 w-3.5 mr-1.5" />
+   617→                  )}
+   618→                  {syncPreviewLoading ? fallbackT.syncPreviewLoading : 'Preview'}
+   619→                </Button>
+   620→              ) : (
+   621→                <>
+   622→                  <Button
+   623→                    size="sm"
+   624→                    onClick={handleSyncHolidays}
+   625→                    disabled={isSyncing}
+   626→                    className="h-9 bg-gradient-to-r from-emerald-500 to-teal-600"
+   627→                  >
+   628→                    {isSyncing ? (
+   629→                      <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+   630→                    ) : (
+   631→                      <Download className="h-3.5 w-3.5 mr-1.5" />
+   632→                    )}
+   633→                    {isSyncing ? 'Syncing...' : `Sync ${syncPreview.count}`}
+   634→                  </Button>
+   635→                  <Button
+   636→                    variant="ghost"
+   637→                    size="icon"
+   638→                    className="h-9 w-9"
+   639→                    onClick={() => setSyncPreview(null)}
+   640→                  >
+   641→                    <X className="h-3.5 w-3.5" />
+   642→                  </Button>
+   643→                </>
+   644→              )}
+   645→            </div>
+   646→          </div>
+   647→          {/* Sync Preview Info */}
+   648→          <AnimatePresence>
+   649→            {syncPreview && (
+   650→              <motion.div
+   651→                initial={{ opacity: 0, height: 0 }}
+   652→                animate={{ opacity: 1, height: 'auto' }}
+   653→                exit={{ opacity: 0, height: 0 }}
+   654→                className="mt-3 overflow-hidden"
+   655→              >
+   656→                <div className="bg-white/50 dark:bg-black/20 rounded-lg p-2.5 text-[10px] sm:text-xs">
+   657→                  <p className="font-medium text-emerald-700 dark:text-emerald-400 mb-1.5">
+   658→                    {fallbackT.syncPreviewCount(syncPreview.count, getSourceDisplayName(syncPreview.source))}
+   659→                  </p>
+   660→                  <div className="max-h-[80px] overflow-y-auto space-y-0.5">
+   661→                    {syncPreview.holidays.slice(0, 10).map((h, i) => (
+   662→                      <p key={i} className="text-muted-foreground truncate">
+   663→                        {h.date} — {h.name}
+   664→                      </p>
+   665→                    ))}
+   666→                    {syncPreview.holidays.length > 10 && (
+   667→                      <p className="text-muted-foreground">...and {syncPreview.holidays.length - 10} more</p>
+   668→                    )}
+   669→                  </div>
+   670→                </div>
+   671→              </motion.div>
+   672→            )}
+   673→          </AnimatePresence>
+   674→        </CardContent>
+   675→      </Card>
+   676→
+   677→      {/* Stats Cards */}
+   678→      {stats && (
+   679→        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
+   680→          {[
+   681→            { label: t.holiday.total, value: stats.totalHolidays, color: 'text-foreground' },
+   682→            { label: t.holiday.paid, value: stats.paidHolidays, color: 'text-emerald-500' },
+   683→            { label: t.holiday.halfDay, value: stats.halfDayHolidays, color: 'text-amber-500' },
+   684→            { label: t.holiday.optionalLabel, value: stats.optionalHolidays, color: 'text-blue-500' },
+   685→            { label: t.holiday.compOffLabel, value: stats.compOffHolidays, color: 'text-teal-500' },
+   686→            { label: fallbackT.published, value: stats.activeHolidays, color: 'text-emerald-500' },
+   687→            { label: t.holiday.draft, value: stats.draftHolidays, color: 'text-orange-400' },
+   688→          ].map((stat) => (
+   689→            <Card key={stat.label} className="border-0 shadow-sm py-2 px-3">
+   690→              <p className={`text-lg sm:text-xl font-bold ${stat.color}`}>{stat.value}</p>
+   691→              <p className="text-[10px] sm:text-xs text-muted-foreground">{stat.label}</p>
+   692→            </Card>
+   693→          ))}
+   694→        </div>
+   695→      )}
+   696→
+   697→      {/* Filter Tabs */}
+   698→      <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+   699→        {filterTabs.map((tab) => (
+   700→          <button
+   701→            key={tab.key}
+   702→            onClick={() => setActiveFilter(tab.key)}
+   703→            className={`flex-1 py-1.5 px-3 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+   704→              activeFilter === tab.key
+   705→                ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
+   706→                : 'text-muted-foreground hover:text-foreground'
+   707→            }`}
+   708→          >
+   709→            {tab.label} <span className="text-[10px] ml-1 opacity-70">({tab.count})</span>
+   710→          </button>
+   711→        ))}
+   712→      </div>
+   713→
+   714→      {/* Bulk Actions Bar — shown when drafts exist and filter is all or draft */}
+   715→      <AnimatePresence>
+   716→        {(stats?.draftHolidays ?? 0) > 0 && (activeFilter === 'all' || activeFilter === 'draft') && (
+   717→          <motion.div
+   718→            initial={{ opacity: 0, y: -10 }}
+   719→            animate={{ opacity: 1, y: 0 }}
+   720→            exit={{ opacity: 0, y: -10 }}
+   721→          >
+   722→            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2.5">
+   723→              <p className="text-xs sm:text-sm font-medium text-amber-700 dark:text-amber-400">
+   724→                {fallbackT.draftBanner(stats?.draftHolidays ?? 0)}
+   725→              </p>
+   726→              <div className="flex items-center gap-2">
+   727→                <Button
+   728→                  size="sm"
+   729→                  variant="outline"
+   730→                  className="h-8 text-xs border-emerald-400 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+   731→                  onClick={() => handleBulkAction('publish-all')}
+   732→                  disabled={isBulkAction}
+   733→                >
+   734→                  {isBulkAction ? <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" /> : <Send className="h-3 w-3 mr-1.5" />}
+   735→                  {fallbackT.publishAll}
+   736→                </Button>
+   737→                <Button
+   738→                  size="sm"
+   739→                  variant="outline"
+   740→                  className="h-8 text-xs border-red-400 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+   741→                  onClick={() => handleBulkAction('delete-drafts')}
+   742→                  disabled={isBulkAction}
+   743→                >
+   744→                  {isBulkAction ? <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" /> : <Trash2 className="h-3 w-3 mr-1.5" />}
+   745→                  {fallbackT.deleteDrafts}
+   746→                </Button>
+   747→              </div>
+   748→            </div>
+   749→          </motion.div>
+   750→        )}
+   751→      </AnimatePresence>
+   752→
+   753→      {/* Error/Success Messages */}
+   754→      <AnimatePresence>
+   755→        {error && (
+   756→          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+   757→            <Alert variant="destructive">
+   758→              <AlertTriangle className="h-4 w-4" />
+   759→              <AlertDescription>{error}</AlertDescription>
+   760→            </Alert>
+   761→          </motion.div>
+   762→        )}
+   763→        {success && (
+   764→          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+   765→            <Alert className="border-emerald-500 bg-emerald-500/10">
+   766→              <Check className="h-4 w-4 text-emerald-500" />
+   767→              <AlertDescription className="text-emerald-600 dark:text-emerald-400">{success}</AlertDescription>
+   768→            </Alert>
+   769→          </motion.div>
+   770→        )}
+   771→      </AnimatePresence>
+   772→
+   773→      {!organizationId && (
+   774→        <Alert variant="destructive">
+   775→          <AlertTriangle className="h-4 w-4" />
+   776→          <AlertDescription>{t.holiday.organizationNotFound}</AlertDescription>
+   777→        </Alert>
+   778→      )}
+   779→
+   780→      {/* Main Grid */}
+   781→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+   782→        {/* Calendar View */}
+   783→        <Card className="lg:col-span-2 border-0 shadow-md">
+   784→          <CardHeader className="pb-2">
+   785→            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+   786→              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+   787→                <CalendarDays className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-500" />
+   788→                {t.holiday.holidayCalendar}
+   789→              </CardTitle>
+   790→              <div className="flex items-center gap-1 sm:gap-2 self-center">
+   791→                <Button variant="ghost" size="icon" onClick={prevMonth} className="h-8 w-8"><ChevronLeft className="h-4 w-4" /></Button>
+   792→                <span className="font-medium text-sm sm:text-base min-w-[120px] sm:min-w-[150px] text-center">
+   793→                  {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+   794→                </span>
+   795→                <Button variant="ghost" size="icon" onClick={nextMonth} className="h-8 w-8"><ChevronRight className="h-4 w-4" /></Button>
+   796→              </div>
+   797→            </div>
+   798→          </CardHeader>
+   799→          <CardContent>
+   800→            <div className="grid grid-cols-7 gap-0.5 sm:gap-1 text-center mb-2">
+   801→              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+   802→                <div key={i} className="text-[10px] sm:text-xs font-medium text-muted-foreground py-1 sm:py-2">{day}</div>
+   803→              ))}
+   804→            </div>
+   805→            <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
+   806→              {getCalendarDays().map((day, index) => (
+   807→                <div
+   808→                  key={index}
+   809→                  className={`aspect-square p-0.5 sm:p-1 rounded-lg text-xs sm:text-sm relative flex flex-col items-center justify-center cursor-pointer transition-all ${
+   810→                    day?.isToday ? 'ring-2 ring-emerald-400' : ''
+   811→                  } ${
+   812→                    day?.holiday
+   813→                      ? day.holiday.status === 'draft'
+   814→                        ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 border border-dashed border-amber-400'
+   815→                        : day.holiday.isHalfDay
+   816→                          ? 'bg-amber-400 text-white font-medium'
+   817→                          : `${getHolidayTypeInfo(day.holiday.holidayType).color} text-white font-medium`
+   818→                      : day ? 'hover:bg-muted' : ''
+   819→                  }`}
+   820→                  title={day?.holiday ? `${day.holiday.holidayName}${day.holiday.status === 'draft' ? ` (${t.holiday.draftHidden})` : ''}` : undefined}
+   821→                  onClick={() => day?.holiday && openEditDialog(day.holiday)}
+   822→                >
+   823→                  {day?.day}
+   824→                  {day?.holiday?.isHalfDay && day.holiday.status === 'active' && (
+   825→                    <span className="text-[6px] sm:text-[8px] leading-none">1/2</span>
+   826→                  )}
+   827→                </div>
+   828→              ))}
+   829→            </div>
+   830→
+   831→            {/* Legend */}
+   832→            <div className="flex flex-wrap gap-2 sm:gap-3 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+   833→              {holidayTypes.map((type) => (
+   834→                <div key={type.value} className="flex items-center gap-1">
+   835→                  <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded ${type.color}`} />
+   836→                  <span className="text-[10px] sm:text-xs text-muted-foreground">{type.label}</span>
+   837→                </div>
+   838→              ))}
+   839→              <div className="flex items-center gap-1">
+   840→                <div className="w-2 h-2 sm:w-3 sm:h-3 rounded bg-amber-400" />
+   841→                <span className="text-[10px] sm:text-xs text-muted-foreground">{t.holiday.halfDay}</span>
+   842→              </div>
+   843→              <div className="flex items-center gap-1">
+   844→                <div className="w-2 h-2 sm:w-3 sm:h-3 rounded border border-dashed border-amber-400 bg-amber-100 dark:bg-amber-900/30" />
+   845→                <span className="text-[10px] sm:text-xs text-muted-foreground">{t.holiday.draftHidden}</span>
+   846→              </div>
+   847→            </div>
+   848→          </CardContent>
+   849→        </Card>
+   850→
+   851→        {/* Right Sidebar */}
+   852→        <div className="space-y-4">
+   853→          {/* Upcoming Holidays */}
+   854→          <Card className="border-0 shadow-md">
+   855→            <CardHeader className="pb-2">
+   856→              <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+   857→                <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
+   858→                {t.holiday.upcoming}
+   859→              </CardTitle>
+   860→            </CardHeader>
+   861→            <CardContent>
+   862→              {getUpcomingHolidays().length === 0 ? (
+   863→                <p className="text-muted-foreground text-xs sm:text-sm text-center py-3 sm:py-4">{t.holiday.noUpcomingHolidays}</p>
+   864→              ) : (
+   865→                <div className="space-y-2">
+   866→                  {getUpcomingHolidays().map((holiday) => {
+   867→                    const typeInfo = getHolidayTypeInfo(holiday.holidayType);
+   868→                    return (
+   869→                      <div key={holiday.id} className="p-2 sm:p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+   870→                        onClick={() => openEditDialog(holiday)}
+   871→                      >
+   872→                        <div className="flex items-center justify-between mb-1">
+   873→                          <span className="font-medium text-xs sm:text-sm truncate mr-2">{holiday.holidayName}</span>
+   874→                          <Badge className={`${typeInfo.color} text-white text-[10px] sm:text-xs flex-shrink-0`}>{typeInfo.label}</Badge>
+   875→                        </div>
+   876→                        <p className="text-[10px] sm:text-xs text-muted-foreground">
+   877→                          {new Date(holiday.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+   878→                        </p>
+   879→                        <div className="flex flex-wrap gap-1 mt-1">
+   880→                          {holiday.isHalfDay && <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-400 text-amber-500">{t.holiday.halfDayLabel}</Badge>}
+   881→                          {holiday.isOptional && <Badge variant="outline" className="text-[8px] px-1 py-0 border-blue-400 text-blue-500">{t.holiday.optionalLabel}</Badge>}
+   882→                          {holiday.compensatoryOff && <Badge variant="outline" className="text-[8px] px-1 py-0 border-teal-400 text-teal-500">{t.holiday.compOffLabel}</Badge>}
+   883→                          {!holiday.isPaid && <Badge variant="outline" className="text-[8px] px-1 py-0 border-red-400 text-red-500">{t.holiday.unpaidLabel}</Badge>}
+   884→                          {holiday.syncSource && (
+   885→                            <Badge variant="outline" className="text-[8px] px-1 py-0 border-purple-400 text-purple-500">
+   886→                              📡 {getSyncSourceLabel(holiday.syncSource)}
+   887→                            </Badge>
+   888→                          )}
+   889→                        </div>
+   890→                      </div>
+   891→                    );
+   892→                  })}
+   893→                </div>
+   894→              )}
+   895→            </CardContent>
+   896→          </Card>
+   897→
+   898→          {/* All Holidays List */}
+   899→          <Card className="border-0 shadow-md">
+   900→            <CardHeader className="pb-2">
+   901→              <CardTitle className="text-base sm:text-lg">{t.holiday.allHolidays} ({holidays.length})</CardTitle>
+   902→            </CardHeader>
+   903→            <CardContent>
+   904→              <ScrollArea className="h-[300px] sm:h-[350px]">
+   905→                {isLoading ? (
+   906→                  <div className="flex items-center justify-center py-8"><RefreshCw className="h-6 w-6 animate-spin text-emerald-500" /></div>
+   907→                ) : holidays.length === 0 ? (
+   908→                  <div className="text-center py-6 sm:py-8">
+   909→                    <Calendar className="h-6 w-6 sm:h-8 sm:w-8 mx-auto mb-2 text-muted-foreground" />
+   910→                    <p className="text-muted-foreground text-xs sm:text-sm">{t.holiday.noHolidaysFound}</p>
+   911→                    <p className="text-xs text-muted-foreground mt-1">{t.holiday.addHolidaysManually}</p>
+   912→                  </div>
+   913→                ) : (
+   914→                  <div className="space-y-2">
+   915→                    {holidays
+   916→                      .sort((a, b) => a.date.localeCompare(b.date))
+   917→                      .map((holiday) => {
+   918→                        const typeInfo = getHolidayTypeInfo(holiday.holidayType);
+   919→                        const isDraft = holiday.status === 'draft';
+   920→                        const isActive = holiday.status === 'active';
+   921→                        const sourceLabel = getSyncSourceLabel(holiday.syncSource);
+   922→                        return (
+   923→                          <div key={holiday.id} className={`p-2 sm:p-3 rounded-lg transition-colors ${isDraft ? 'bg-amber-50 dark:bg-amber-950/20 border border-dashed border-amber-300 dark:border-amber-700' : 'bg-muted/30'}`}>
+   924→                            <div className="flex items-start justify-between gap-2">
+   925→                              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEditDialog(holiday)}>
+   926→                                <div className="flex items-center gap-1.5 flex-wrap">
+   927→                                  <p className="font-medium text-xs sm:text-sm truncate">{holiday.holidayName}</p>
+   928→                                  {/* Publish/Draft Badge */}
+   929→                                  {isActive ? (
+   930→                                    <Badge className="bg-emerald-500 text-white text-[8px] px-1.5 py-0">{fallbackT.published}</Badge>
+   931→                                  ) : (
+   932→                                    <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-gray-400 text-gray-500">{t.holiday.draft}</Badge>
+   933→                                  )}
+   934→                                  {/* Sync Source Label */}
+   935→                                  {sourceLabel && (
+   936→                                    <span className="text-[8px] px-1.5 py-0 rounded bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800 inline-flex items-center gap-0.5">
+   937→                                      <Radio className="h-2.5 w-2.5" />
+   938→                                      {sourceLabel}
+   939→                                    </span>
+   940→                                  )}
+   941→                                </div>
+   942→                                <p className="text-[10px] sm:text-xs text-muted-foreground">
+   943→                                  {new Date(holiday.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+   944→                                </p>
+   945→                                {/* Feature badges */}
+   946→                                <div className="flex flex-wrap gap-1 mt-1">
+   947→                                  <Badge className={`${typeInfo.color} text-white text-[10px]`}>{typeInfo.label}</Badge>
+   948→                                  {holiday.isHalfDay && <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-400 text-amber-500">{t.holiday.halfDayLabel}</Badge>}
+   949→                                  {holiday.allowPunch && <Badge variant="outline" className="text-[8px] px-1 py-0 border-emerald-400 text-emerald-500">{t.holiday.punchAllowed}</Badge>}
+   950→                                  {!holiday.isPaid && <Badge variant="outline" className="text-[8px] px-1 py-0 border-red-400 text-red-500">{t.holiday.unpaidLabel}</Badge>}
+   951→                                  {holiday.isOptional && <Badge variant="outline" className="text-[8px] px-1 py-0 border-blue-400 text-blue-500">{t.holiday.optionalLabel}</Badge>}
+   952→                                  {holiday.compensatoryOff && <Badge variant="outline" className="text-[8px] px-1 py-0 border-teal-400 text-teal-500">{t.holiday.compOffLabel}</Badge>}
+   953→                                </div>
+   954→                              </div>
+   955→                              {/* Action buttons column */}
+   956→                              <div className="flex flex-col items-center gap-0.5">
+   957→                                {/* Publish/Draft Toggle Switch */}
+   958→                                <div className="flex items-center" title={isActive ? t.holiday.hideFromEmployees : t.holiday.showToEmployees}>
+   959→                                  <Switch
+   960→                                    checked={isActive}
+   961→                                    onCheckedChange={() => handleTogglePublish(holiday)}
+   962→                                    className="scale-75 origin-right"
+   963→                                  />
+   964→                                </div>
+   965→                                {/* Edit */}
+   966→                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(holiday)}>
+   967→                                  <Edit className="h-3 w-3" />
+   968→                                </Button>
+   969→                                {/* Delete */}
+   970→                                <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 text-red-500" onClick={() => setDeletingHoliday(holiday)}>
+   971→                                  <Trash2 className="h-3 w-3" />
+   972→                                </Button>
+   973→                              </div>
+   974→                            </div>
+   975→                          </div>
+   976→                        );
+   977→                      })}
+   978→                  </div>
+   979→                )}
+   980→              </ScrollArea>
+   981→            </CardContent>
+   982→          </Card>
+   983→        </div>
+   984→      </div>
+   985→
+   986→      {/* Add/Edit Holiday Dialog */}
+   987→      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+   988→        <DialogContent className="max-w-md w-[95vw] sm:w-full max-h-[90vh] overflow-y-auto">
+   989→          <DialogHeader>
+   990→            <DialogTitle className="text-base sm:text-lg">
+   991→              {editingHoliday ? t.holiday.editHoliday : t.holiday.addHoliday}
+   992→            </DialogTitle>
+   993→            <DialogDescription className="text-xs text-muted-foreground">
+   994→              {editingHoliday ? t.holiday.editHolidayDesc : t.holiday.addHolidayDesc}
+   995→            </DialogDescription>
+   996→          </DialogHeader>
+   997→
+   998→          {!editingHoliday && (
+   999→            <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+  1000→              <p className="text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+  1001→                <Info className="h-3.5 w-3.5" />
+  1002→                {t.holiday.draftNote}
+  1003→              </p>
+  1004→            </div>
+  1005→          )}
+  1006→
+  1007→          <div className="space-y-3 sm:space-y-4">
+  1008→            {/* Basic Info */}
+  1009→            <div className="space-y-1.5 sm:space-y-2">
+  1010→              <Label className="text-xs sm:text-sm">{t.holiday.holidayNameRequired}</Label>
+  1011→              <Input placeholder="e.g., Diwali, Independence Day" value={formData.holidayName}
+  1012→                onChange={(e) => setFormData({ ...formData, holidayName: e.target.value })} className="text-sm" />
+  1013→            </div>
+  1014→
+  1015→            <div className="grid grid-cols-2 gap-3">
+  1016→              <div className="space-y-1.5 sm:space-y-2">
+  1017→                <Label className="text-xs sm:text-sm">{t.holiday.date} *</Label>
+  1018→                <Input type="date" value={formData.date}
+  1019→                  onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="text-sm" />
+  1020→              </div>
+  1021→              <div className="space-y-1.5 sm:space-y-2">
+  1022→                <Label className="text-xs sm:text-sm">{t.holiday.selectType}</Label>
+  1023→                <Select value={formData.holidayType} onValueChange={(value) => setFormData({ ...formData, holidayType: value })}>
+  1024→                  <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+  1025→                  <SelectContent>
+  1026→                    {holidayTypes.map((type) => (
+  1027→                      <SelectItem key={type.value} value={type.value} className="text-sm">
+  1028→                        <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded ${type.color}`} />{type.label}</div>
+  1029→                      </SelectItem>
+  1030→                    ))}
+  1031→                  </SelectContent>
+  1032→                </Select>
+  1033→              </div>
+  1034→            </div>
+  1035→
+  1036→            <div className="space-y-1.5 sm:space-y-2">
+  1037→              <Label className="text-xs sm:text-sm">{t.holiday.description}</Label>
+  1038→              <Textarea placeholder={t.holiday.descriptionPlaceholder} value={formData.description}
+  1039→                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+  1040→                className="text-sm min-h-[60px] resize-none" />
+  1041→            </div>
+  1042→
+  1043→            <Separator />
+  1044→
+  1045→            {/* Attendance Control */}
+  1046→            <div>
+  1047→              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+  1048→                <Shield className="h-3 w-3" /> {t.holiday.attendanceRules}
+  1049→              </h4>
+  1050→              <div className="space-y-2">
+  1051→                <div className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+  1052→                  <div className="flex items-center gap-2">
+  1053→                    {formData.allowPunch ? <Eye className="h-4 w-4 text-emerald-500" /> : <EyeOff className="h-4 w-4 text-red-400" />}
+  1054→                    <div>
+  1055→                      <p className="text-xs sm:text-sm font-medium">{t.holiday.allowAttendance}</p>
+  1056→                      <p className="text-[10px] text-muted-foreground">{t.holiday.allowAttendanceDesc}</p>
+  1057→                    </div>
+  1058→                  </div>
+  1059→                  <Switch checked={formData.allowPunch} onCheckedChange={(c) => setFormData({ ...formData, allowPunch: c })} />
+  1060→                </div>
+  1061→
+  1062→                <div className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+  1063→                  <div className="flex items-center gap-2">
+  1064→                    <CalendarDays className="h-4 w-4 text-amber-500" />
+  1065→                    <div>
+  1066→                      <p className="text-xs sm:text-sm font-medium">{t.holiday.halfDayHoliday}</p>
+  1067→                      <p className="text-[10px] text-muted-foreground">{t.holiday.halfDayHolidayDesc}</p>
+  1068→                    </div>
+  1069→                  </div>
+  1070→                  <Switch checked={formData.isHalfDay} onCheckedChange={(c) => setFormData({ ...formData, isHalfDay: c })} />
+  1071→                </div>
+  1072→              </div>
+  1073→            </div>
+  1074→
+  1075→            <Separator />
+  1076→
+  1077→            {/* Salary / Payment Control */}
+  1078→            <div>
+  1079→              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+  1080→                <CircleDollarSign className="h-3 w-3" /> {t.holiday.salaryPayment}
+  1081→              </h4>
+  1082→              <div className="space-y-2">
+  1083→                <div className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+  1084→                  <div className="flex items-center gap-2">
+  1085→                    {formData.isPaid ? <HandCoins className="h-4 w-4 text-emerald-500" /> : <HandCoins className="h-4 w-4 text-red-400" />}
+  1086→                    <div>
+  1087→                      <p className="text-xs sm:text-sm font-medium">{t.holiday.paidHoliday}</p>
+  1088→                      <p className="text-[10px] text-muted-foreground">{t.holiday.paidHolidayDesc}</p>
+  1089→                    </div>
+  1090→                  </div>
+  1091→                  <Switch checked={formData.isPaid} onCheckedChange={(c) => setFormData({ ...formData, isPaid: c })} />
+  1092→                </div>
+  1093→
+  1094→                <div className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+  1095→                  <div className="flex items-center gap-2">
+  1096→                    <CircleDot className="h-4 w-4 text-blue-500" />
+  1097→                    <div>
+  1098→                      <p className="text-xs sm:text-sm font-medium">{t.holiday.optionalHoliday}</p>
+  1099→                      <p className="text-[10px] text-muted-foreground">{t.holiday.optionalHolidayDesc}</p>
+  1100→                    </div>
+  1101→                  </div>
+  1102→                  <Switch checked={formData.isOptional} onCheckedChange={(c) => setFormData({ ...formData, isOptional: c })} />
+  1103→                </div>
+  1104→
+  1105→                <div className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+  1106→                  <div className="flex items-center gap-2">
+  1107→                    <ToggleLeft className="h-4 w-4 text-teal-500" />
+  1108→                    <div>
+  1109→                      <p className="text-xs sm:text-sm font-medium">{t.holiday.compensatoryOff}</p>
+  1110→                      <p className="text-[10px] text-muted-foreground">{t.holiday.compensatoryOffDesc}</p>
+  1111→                    </div>
+  1112→                  </div>
+  1113→                  <Switch checked={formData.compensatoryOff} onCheckedChange={(c) => setFormData({ ...formData, compensatoryOff: c })} />
+  1114→                </div>
+  1115→              </div>
+  1116→            </div>
+  1117→
+  1118→            <Separator />
+  1119→
+  1120→            {/* Recurring / Weekly Off */}
+  1121→            <div>
+  1122→              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+  1123→                <Clock className="h-3 w-3" /> {t.holiday.weeklyOff}
+  1124→              </h4>
+  1125→              <div className="flex items-center justify-between p-2.5 bg-muted rounded-lg">
+  1126→                <div>
+  1127→                  <p className="text-xs sm:text-sm font-medium">{t.holiday.repeatEveryWeek}</p>
+  1128→                  <p className="text-[10px] text-muted-foreground">{t.holiday.weeklyOffRecurring}</p>
+  1129→                </div>
+  1130→                <Switch checked={formData.isRecurring} onCheckedChange={(c) => setFormData({ ...formData, isRecurring: c })} />
+  1131→              </div>
+  1132→
+  1133→              {formData.isRecurring && (
+  1134→                <div className="space-y-1.5 sm:space-y-2 mt-2">
+  1135→                  <Label className="text-xs sm:text-sm">{t.holiday.dayOfWeek}</Label>
+  1136→                  <Select value={formData.recurringDay.toString()}
+  1137→                    onValueChange={(value) => setFormData({ ...formData, recurringDay: parseInt(value) })}>
+  1138→                    <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+  1139→                    <SelectContent>
+  1140→                      {weekDays.map((day) => (
+  1141→                        <SelectItem key={day.value} value={day.value.toString()} className="text-sm">{day.label}</SelectItem>
+  1142→                      ))}
+  1143→                    </SelectContent>
+  1144→                  </Select>
+  1145→                </div>
+  1146→              )}
+  1147→            </div>
+  1148→
+  1149→            <Separator />
+  1150→
+  1151→            {/* Status - only show when editing */}
+  1152→            {editingHoliday && (
+  1153→              <div>
+  1154→                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+  1155→                  <Send className="h-3 w-3" /> {t.holiday.showToEmployees}
+  1156→                </h4>
+  1157→                <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+  1158→                  <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+  1159→                  <SelectContent>
+  1160→                    <SelectItem value="active">
+  1161→                      <span className="flex items-center gap-2"><Eye className="h-3.5 w-3.5 text-emerald-500" />{t.holiday.publishedEmployees}</span>
+  1162→                    </SelectItem>
+  1163→                    <SelectItem value="draft">
+  1164→                      <span className="flex items-center gap-2"><EyeOff className="h-3.5 w-3.5 text-amber-500" />{t.holiday.draftHidden}</span>
+  1165→                    </SelectItem>
+  1166→                  </SelectContent>
+  1167→                </Select>
+  1168→              </div>
+  1169→            )}
+  1170→
+  1171→            <div className="flex gap-2 pt-2 sm:pt-4">
+  1172→              <Button variant="outline" className="flex-1 text-sm h-10 sm:h-11"
+  1173→                onClick={() => { setShowAddDialog(false); setEditingHoliday(null); }}>
+  1174→                {t.common.cancel}
+  1175→              </Button>
+  1176→              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-sm h-10 sm:h-11"
+  1177→                onClick={handleSaveHoliday} disabled={isLoading || !formData.holidayName || !formData.date}>
+  1178→                {isLoading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
+  1179→                {editingHoliday ? t.common.save : t.common.add}
+  1180→              </Button>
+  1181→            </div>
+  1182→          </div>
+  1183→        </DialogContent>
+  1184→      </Dialog>
+  1185→
+  1186→      {/* Delete Confirmation Dialog */}
+  1187→      <AlertDialog open={!!deletingHoliday} onOpenChange={(open) => { if (!open) setDeletingHoliday(null); }}>
+  1188→        <AlertDialogContent>
+  1189→          <AlertDialogHeader>
+  1190→            <AlertDialogTitle>{t.holiday.deleteHoliday}</AlertDialogTitle>
+  1191→            <AlertDialogDescription>
+  1192→              {t.holiday.confirmDeleteHoliday} — <strong>{deletingHoliday?.holidayName}</strong>
+  1193→              <br />
+  1194→              {t.holiday.deleteHolidayWarning}
+  1195→            </AlertDialogDescription>
+  1196→          </AlertDialogHeader>
+  1197→          <AlertDialogFooter>
+  1198→            <AlertDialogCancel onClick={() => setDeletingHoliday(null)}>{t.common.cancel}</AlertDialogCancel>
+  1199→            <AlertDialogAction className="bg-red-500 hover:bg-red-600" onClick={handleDeleteHoliday}>
+  1200→              {t.common.delete}
+  1201→            </AlertDialogAction>
+  1202→          </AlertDialogFooter>
+  1203→        </AlertDialogContent>
+  1204→      </AlertDialog>
+  1205→    </div>
+  1206→  );
+  1207→}

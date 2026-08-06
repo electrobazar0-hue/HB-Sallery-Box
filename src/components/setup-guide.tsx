@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { fetchJSON } from '@/lib/utils';
 
 interface SetupStep {
   id: number;
@@ -88,10 +89,9 @@ export function SetupGuide() {
   const checkConnection = async () => {
     setStatus('checking');
     try {
-      const res = await fetch('/api/setup');
-      const data = await res.json();
+      const data = await fetchJSON('/api/setup');
       
-      if (data.success && data.connected) {
+      if (data?.success && data.connected) {
         setStatus('connected');
         toast({ title: 'Database Connected! ✅', description: 'App is ready. Page reload ho rahi hai...' });
         setTimeout(() => window.location.reload(), 2000);

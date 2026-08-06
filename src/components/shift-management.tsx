@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useLanguageStore } from '@/lib/i18n';
+import { fetchJSON } from '@/lib/utils';
 
 interface Shift {
   id: string;
@@ -76,13 +77,12 @@ export function ShiftManagement({ organizationId }: ShiftManagementProps) {
     if (!shiftForm.name || !shiftForm.startTime || !shiftForm.endTime) return;
 
     try {
-      const response = await fetch('/api/shifts', {
+      const data = await fetchJSON('/api/shifts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...shiftForm, organizationId }),
       });
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         setShifts([...shifts, data.shift]);
       }
     } catch {

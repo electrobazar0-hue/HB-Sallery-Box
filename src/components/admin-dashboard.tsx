@@ -32,6 +32,7 @@ import { EmployeeActivities } from '@/components/employee-activities';
 import { HolidayManagement } from '@/components/holiday-management';
 import { useNotifications, NotificationData } from '@/hooks/use-notifications';
 import { useLanguageStore } from '@/lib/i18n';
+import { fetchJSON } from '@/lib/utils';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -258,9 +259,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     const fetchData = async () => {
       // Fetch employees - NO DEMO DATA, only real data from database
       try {
-        const response = await fetch(`/api/employees?adminId=${user.id}`);
-        const data = await response.json();
-        if (mounted && data.employees) {
+        const data = await fetchJSON(`/api/employees?adminId=${user.id}`);
+        if (mounted && data?.employees) {
           setEmployees(data.employees);
         }
       } catch (error) {
@@ -275,9 +275,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       if (user.organizationId) {
         try {
           const today = new Date().toISOString().split('T')[0];
-          const response = await fetch(`/api/attendance?organizationId=${user.organizationId}&date=${today}`);
-          const data = await response.json();
-          if (mounted && data.attendance) {
+          const data = await fetchJSON(`/api/attendance?organizationId=${user.organizationId}&date=${today}`);
+          if (mounted && data?.attendance) {
             setAttendance(data.attendance);
           }
         } catch (error) {
@@ -290,9 +289,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         
         // Fetch leaves - NO DEMO DATA
         try {
-          const response = await fetch(`/api/leaves?organizationId=${user.organizationId}&status=pending`);
-          const data = await response.json();
-          if (mounted && data.leaves) {
+          const data = await fetchJSON(`/api/leaves?organizationId=${user.organizationId}&status=pending`);
+          if (mounted && data?.leaves) {
             setLeaves(data.leaves);
           }
         } catch (error) {
@@ -305,9 +303,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         
         // Fetch expenses - NO DEMO DATA
         try {
-          const response = await fetch(`/api/expenses?organizationId=${user.organizationId}`);
-          const data = await response.json();
-          if (mounted && data.expenses) {
+          const data = await fetchJSON(`/api/expenses?organizationId=${user.organizationId}`);
+          if (mounted && data?.expenses) {
             setExpenses(data.expenses);
           }
         } catch (error) {
@@ -330,9 +327,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     let mounted = true;
     const fetchEvents = async () => {
       try {
-        const response = await fetch(`/api/employees/events?organizationId=${user.organizationId}`);
-        const data = await response.json();
-        if (mounted && data.success) {
+        const data = await fetchJSON(`/api/employees/events?organizationId=${user.organizationId}`);
+        if (mounted && data?.success) {
           setEmployeeEvents(data);
         }
       } catch (error) {
@@ -372,7 +368,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     
     setIsLoading(true);
     try {
-      const response = await fetch('/api/employees', {
+      const data = await fetchJSON('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -395,9 +391,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           organizationId: user.organizationId,
         }),
       });
-      const data = await response.json();
       
-      if (response.ok && data.success) {
+      if (data && data.success) {
         setEmployees([...employees, data.employee]);
         addNotification({
           title: t.messages.employeeAdded,
@@ -561,7 +556,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     notes?: string;
   }) => {
     try {
-      const response = await fetch('/api/payroll', {
+      const result = await fetchJSON('/api/payroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -572,8 +567,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         }),
       });
       
-      if (response.ok) {
-        const result = await response.json();
+      if (result) {
         addNotification({
           title: t.payroll.payrollUpdated,
           body: `${t.payroll.payrollForMonth} ${selectedPayrollMonth}`,
@@ -662,7 +656,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     
     setIsLoading(true);
     try {
-      const response = await fetch('/api/salary', {
+      const data = await fetchJSON('/api/salary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -671,8 +665,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           netSalary: salaryForm.baseSalary + salaryForm.overtime + salaryForm.incentives - salaryForm.deductions,
         }),
       });
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         addNotification({
           title: t.messages.salaryPaidSuccess,
           body: `${t.salary.salaryPaidSuccess} ${selectedEmployee.name} ${t.salary.forMonth} ${salaryForm.month}`,
@@ -693,11 +686,10 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     if (!confirm(t.employee.confirmDeleteEmployee)) return;
     
     try {
-      const response = await fetch(`/api/employees?id=${id}`, {
+      const data = await fetchJSON(`/api/employees?id=${id}`, {
         method: 'DELETE',
       });
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         setEmployees(employees.filter(e => e.id !== id));
         addNotification({
           title: t.messages.employeeDeleted,
@@ -715,9 +707,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     if (!user?.organizationId) return;
     
     try {
-      const response = await fetch(`/api/leaves?organizationId=${user.organizationId}`);
-      const data = await response.json();
-      if (data.leaves) {
+      const data = await fetchJSON(`/api/leaves?organizationId=${user.organizationId}`);
+      if (data?.leaves) {
         setAllLeaves(data.leaves);
       }
     } catch (error) {
@@ -742,7 +733,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     
     setIsLoading(true);
     try {
-      const response = await fetch('/api/incentives', {
+      const data = await fetchJSON('/api/incentives', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -754,8 +745,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           organizationId: user?.organizationId,
         }),
       });
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         addNotification({
           title: t.incentive.incentiveAdded,
           body: `₹${incentiveForm.amount.toLocaleString()} ${t.incentive.incentiveAdded} - ${incentiveEmployee.name}`,
@@ -766,9 +756,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         setIncentiveForm({ amount: 0, reason: '', type: 'bonus', month: new Date().toISOString().slice(0, 7) });
         // Refresh incentive records
         try {
-          const response = await fetch(`/api/incentives?organizationId=${user?.organizationId}`);
-          const data = await response.json();
-          if (data.incentives) {
+          const data = await fetchJSON(`/api/incentives?organizationId=${user?.organizationId}`);
+          if (data?.incentives) {
             setIncentiveRecords(data.incentives);
           }
         } catch (e) {
@@ -787,9 +776,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
       // Define async function inside effect
       const loadIncentives = async () => {
         try {
-          const response = await fetch(`/api/incentives?organizationId=${user.organizationId}`);
-          const data = await response.json();
-          if (data.incentives) {
+          const data = await fetchJSON(`/api/incentives?organizationId=${user.organizationId}`);
+          if (data?.incentives) {
             setIncentiveRecords(data.incentives);
           }
         } catch (error) {

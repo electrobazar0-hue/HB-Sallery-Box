@@ -30,6 +30,7 @@ import { useGPS } from '@/hooks/use-gps';
 import { useNotifications } from '@/hooks/use-notifications';
 import { CameraCapture } from '@/components/camera-capture';
 import { to12HourFormat, dateTo12HourFormat, dateTo12HourFormatWithSeconds, dateTo24HourFormatWithSeconds, formatTimeWithSeconds } from '@/lib/time-utils';
+import { fetchJSON } from '@/lib/utils';
 // import { isWithinGeofence, getGeofenceViolationMessage } from '@/lib/geofence';
 
 interface AttendanceRecord {
@@ -219,13 +220,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchAttendance = async () => {
       try {
-        const response = await fetch(`/api/attendance?employeeId=${user.id}`);
-        
-        if (!response.ok) {
+        const data = await fetchJSON(`/api/attendance?employeeId=${user.id}`);
+        if (!data) {
           throw new Error('Failed to fetch attendance');
         }
-        
-        const data = await response.json();
         
         if (mounted && data.attendance && data.attendance.length > 0) {
           setAttendanceHistory(data.attendance);
@@ -260,13 +258,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchSalaryHistory = async () => {
       try {
-        const response = await fetch(`/api/salary?employeeId=${user.id}`);
-        
-        if (!response.ok) {
+        const data = await fetchJSON(`/api/salary?employeeId=${user.id}`);
+        if (!data) {
           throw new Error('Failed to fetch salary history');
         }
-        
-        const data = await response.json();
         
         if (mounted && data.salaries) {
           setSalaryHistory(data.salaries);
@@ -292,13 +287,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchLeaveRecords = async () => {
       try {
-        const response = await fetch(`/api/leaves?employeeId=${user.id}`);
-        
-        if (!response.ok) {
+        const data = await fetchJSON(`/api/leaves?employeeId=${user.id}`);
+        if (!data) {
           throw new Error('Failed to fetch leave records');
         }
-        
-        const data = await response.json();
         
         if (mounted && data.leaves) {
           setLeaveRecords(data.leaves);
@@ -324,13 +316,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchIncentives = async () => {
       try {
-        const response = await fetch(`/api/incentives?employeeId=${user.id}`);
-        
-        if (!response.ok) {
+        const data = await fetchJSON(`/api/incentives?employeeId=${user.id}`);
+        if (!data) {
           throw new Error('Failed to fetch incentives');
         }
-        
-        const data = await response.json();
         
         if (mounted && data.incentives) {
           setIncentiveRecords(data.incentives);
@@ -356,13 +345,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchExpenses = async () => {
       try {
-        const response = await fetch(`/api/expenses?employeeId=${user.id}`);
-        
-        if (!response.ok) {
+        const data = await fetchJSON(`/api/expenses?employeeId=${user.id}`);
+        if (!data) {
           throw new Error('Failed to fetch expenses');
         }
-        
-        const data = await response.json();
         
         if (mounted && data.expenses) {
           setExpenseRecords(data.expenses);
@@ -388,13 +374,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     const fetchAnnouncements = async () => {
       try {
-        const response = await fetch(`/api/announcements?organizationId=${user.organizationId}`);
-        
-        if (!response.ok) {
+        const data = await fetchJSON(`/api/announcements?organizationId=${user.organizationId}`);
+        if (!data) {
           throw new Error('Failed to fetch announcements');
         }
-        
-        const data = await response.json();
         
         if (mounted && data.announcements && data.announcements.length > 0) {
           setAnnouncements(data.announcements);
@@ -605,18 +588,16 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       };
       console.log('Sending to API:', payload);
 
-      const response = await fetch('/api/attendance', {
+      const data = await fetchJSON('/api/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      console.log('API response status:', response.status);
-      const data = await response.json();
       console.log('API response data:', data);
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to punch in/out');
+      if (!data) {
+        throw new Error('Failed to punch in/out');
       }
 
       // Show accuracy in notification
@@ -739,7 +720,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/expenses', {
+      const data = await fetchJSON('/api/expenses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -753,7 +734,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         }),
       });
       
-      if (response.ok) {
+      if (data) {
         addNotification({
           title: t.expense.expenseSubmitted,
           body: t.dashboard.expenseSubmitMessage,
@@ -769,7 +750,6 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
           receiptUrl: '',
         });
         // Refresh expense records
-        const data = await response.json();
         if (data.expense) {
           setExpenseRecords(prev => [data.expense, ...prev]);
         }
@@ -836,8 +816,8 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     } else if (id === 'holidays') {
       setShowHolidayDialog(true);
       if (user?.organizationId) {
-        fetch(`/api/holidays?organizationId=${user.organizationId}&status=active`).then(r => r.json()).then(d => {
-          if (d.success) setPublishedHolidays(d.holidays || []);
+        fetchJSON(`/api/holidays?organizationId=${user.organizationId}&status=active`).then(d => {
+          if (d && d.success) setPublishedHolidays(d.holidays || []);
         }).catch(() => {});
       }
     } else if (id === 'salary') {

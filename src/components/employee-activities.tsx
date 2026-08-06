@@ -7,6 +7,7 @@ import {
   Calendar, Filter, ChevronLeft, ChevronRight, Eye
 } from 'lucide-react';
 import { to12HourFormat } from '@/lib/time-utils';
+import { fetchJSON } from '@/lib/utils';
 import { useLanguageStore } from '@/lib/i18n';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -71,9 +72,8 @@ export function EmployeeActivities({ organizationId }: EmployeeActivitiesProps) 
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
-        const response = await fetch(`/api/employees?organizationId=${organizationId}`);
-        const data = await response.json();
-        if (data.employees) {
+        const data = await fetchJSON(`/api/employees?organizationId=${organizationId}`);
+        if (data?.employees) {
           setEmployees(data.employees.map((e: { id: string; name: string; designation?: string }) => ({
             id: e.id,
             name: e.name,
@@ -104,9 +104,8 @@ export function EmployeeActivities({ organizationId }: EmployeeActivitiesProps) 
         if (selectedEmployee !== 'all') {
           url = `/api/attendance?employeeId=${selectedEmployee}`;
         }
-        const response = await fetch(url);
-        const data = await response.json();
-        if (data.attendance) {
+        const data = await fetchJSON(url);
+        if (data?.attendance) {
           setActivities(data.attendance);
         }
       } catch {

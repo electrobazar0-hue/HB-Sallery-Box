@@ -35,6 +35,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/store/auth-store';
 import { CameraCapture } from '@/components/camera-capture';
+import { fetchJSON } from '@/lib/utils';
 
 interface Employee {
   id: string;
@@ -91,9 +92,8 @@ export function EmployeeManagement() {
     if (!user?.id) return;
     
     try {
-      const response = await fetch(`/api/employees?adminId=${user.id}`);
-      const data = await response.json();
-      setEmployees(data.employees || []);
+      const data = await fetchJSON(`/api/employees?adminId=${user.id}`);
+      setEmployees(data?.employees || []);
     } catch (error) {
       console.error('Error fetching employees:', error);
     } finally {
@@ -246,16 +246,14 @@ export function EmployeeManagement() {
         requestBody.geofenceRadius = null;
       }
 
-      const response = await fetch('/api/employees', {
+      const data = await fetchJSON('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to add employee');
+      if (!data) {
+        throw new Error('Failed to add employee');
       }
 
       await fetchEmployees();
@@ -300,16 +298,14 @@ export function EmployeeManagement() {
         requestBody.geofenceRadius = null;
       }
 
-      const response = await fetch('/api/employees', {
+      const data = await fetchJSON('/api/employees', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update employee');
+      if (!data) {
+        throw new Error('Failed to update employee');
       }
 
       await fetchEmployees();
@@ -329,11 +325,11 @@ export function EmployeeManagement() {
     setIsSaving(true);
 
     try {
-      const response = await fetch(`/api/employees?id=${selectedEmployee.id}`, {
+      const data = await fetchJSON(`/api/employees?id=${selectedEmployee.id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) {
+      if (!data) {
         throw new Error('Failed to delete employee');
       }
 

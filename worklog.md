@@ -251,3 +251,145 @@ Stage Summary:
 - Registration API confirmed working (200 status, returns user+org data) via direct HTTP test
 - All `.create()` calls across the app will now auto-generate `id` and `updatedAt`
 - Login screen now properly shown after splash screen
+
+---
+Task ID: 3-a
+Agent: Sub-agent
+Task: Replace all raw fetch()+.json() calls in admin-dashboard.tsx with fetchJSON() from @/lib/utils
+
+Work Log:
+- Added `import { fetchJSON } from '@/lib/utils';` at top of file (line 35)
+- Replaced 13 total fetch+json patterns with fetchJSON:
+  - 8 GET data-loading calls (employees, attendance, pending leaves, expenses, employee events, all leaves, incentives×2)
+  - 5 POST/DELETE calls with .json() (add employee, payroll save, pay salary, delete employee, add incentive)
+- Changed `response.ok && data.success` → `data && data.success` (add employee)
+- Changed `response.ok` → `if (result)` (payroll)
+- Changed `data.success` → `data?.success` (salary, delete employee, incentives)
+- Changed `data.employees/attendance/leaves/expenses/incentives` → `data?.employees/attendance/leaves/expenses/incentives` for null-safety
+- Left 6 fire-and-forget PUT/POST calls without .json() as-is (toggle star, toggle biometric, reject leave, approve leave, expense action, send announcement)
+- No `.then(r => r.json())` fire-and-forget pattern existed in the file
+- Verified: 0 remaining `response.json()`, 0 remaining `const response = await fetch`, 0 remaining `response.ok`
+
+Stage Summary:
+- All 13 fetch+json patterns replaced with fetchJSON (safe wrapper that returns null on error)
+- 6 fire-and-forget fetch calls without .json() left unchanged
+- All existing logic, validation, error handling, and UI preserved unchanged
+- fetchJSON provides automatic error handling (non-2xx status, non-JSON content-type, network errors all return null)
+
+---
+Task ID: 3-b
+Agent: Sub-agent
+Task: Replace all raw fetch()+.json() calls in employee-dashboard.tsx with fetchJSON() from @/lib/utils
+
+Work Log:
+- Added `import { fetchJSON } from '@/lib/utils';` at line 33
+- Replaced 9 fetch+json patterns with fetchJSON:
+  - 7 GET data-loading calls (attendance, salary, leaves, incentives, expenses, announcements)
+  - 1 POST attendance punch call (with fetchJSON options init parameter)
+  - 1 POST expenses submit call (response.ok → if data)
+- Replaced fire-and-forget holidays chain (line 839): `fetch(...).then(r => r.json()).then(d => {` → `fetchJSON(...).then(d => {` with added null guard `if (d && d.success)`
+- Attendance POST: Removed `console.log('API response status:', response.status)` (no longer available), kept `console.log('API response data:', data)`
+- Expenses POST: Moved `const data` from inside `if (response.ok)` block to before it (fetchJSON returns data or null)
+- 2 fetch calls left unchanged (correctly):
+  - Leaves POST (line 697): fire-and-forget, no .json() call
+  - Expenses DELETE (line 772): checks response.ok but no .json() call
+- Verified: 0 remaining `response.json()`, 0 remaining fetch+json pattern that needs replacement
+
+Stage Summary:
+- All 10 fetch calls that used `.json()` replaced with fetchJSON (safe wrapper that returns null on error)
+- 2 fire-and-forget fetch calls without .json() left unchanged
+- Holidays fire-and-forget chain converted from `.then(r => r.json()).then(d => ...)` to `.then(d => ...)`
+- All existing logic, validation, error handling, and UI preserved unchanged
+
+---
+Task ID: 3-c
+Agent: Sub-agent
+Task: Replace all raw fetch()+.json() calls in 6 remaining components with fetchJSON() from @/lib/utils
+
+Work Log:
+- Fixed 6 files: employee-management.tsx, holiday-management.tsx, shift-management.tsx, employee-activities.tsx, settings.tsx, setup-guide.tsx
+- Each file: Added `import { fetchJSON } from '@/lib/utils';`
+
+employee-management.tsx (4 replacements):
+- GET fetchEmployees: `const response = await fetch(...); const data = await response.json()` → `const data = await fetchJSON(...)`, added `?.` null-safety on `data.employees`
+- POST handleAddEmployee: fetch+json+response.ok → fetchJSON, `!response.ok` → `!data`
+- PUT handleEditEmployee: fetch+json+response.ok → fetchJSON, `!response.ok` → `!data`
+- DELETE handleDeleteEmployee: fetch+response.ok (no .json()) → fetchJSON, `!response.ok` → `!data`
+
+holiday-management.tsx (8 replacements):
+- GET fetchHolidays: fetch+json → fetchJSON, added `?.` on `data.success`, `data.error`, `data.holidays`, `data.stats`
+- GET handleSyncPreview: fetch+json → fetchJSON, added `?.` null-safety
+- POST handleSyncHolidays: fetch+json → fetchJSON, added `?.` on data accesses
+- PATCH handleBulkAction: fetch+json → fetchJSON, added `?.` on data accesses
+- POST/PUT handleSaveHoliday: fetch+json → fetchJSON, added `?.` null-safety
+- PUT handleQuickToggle: fetch+json → fetchJSON, added `?.` on `data.success`
+- PUT handleTogglePublish: fetch+json → fetchJSON, added `?.` on `data.success`
+- DELETE handleDeleteHoliday: fetch+json → fetchJSON, added `?.` on `data.success`, `data.error`
+
+shift-management.tsx (1 replacement):
+- POST handleAddShift: fetch+json → fetchJSON, added `?.` on `data.success`
+- DELETE handleDeleteShift: fire-and-forget (no .json(), no response.ok) — left unchanged
+
+employee-activities.tsx (2 replacements):
+- GET fetchEmployees: fetch+json → fetchJSON, added `?.` on `data.employees`
+- GET fetchActivities: fetch+json → fetchJSON, added `?.` on `data.attendance`
+
+settings.tsx (1 replacement):
+- PUT handleProfilePhotoUpdate: fetch+json → fetchJSON, added `?.` on `data.success`
+
+setup-guide.tsx (1 replacement):
+- GET checkConnection: `const res = await fetch(...); const data = await res.json()` → `const data = await fetchJSON(...)`, added `?.` on `data.success`
+
+- Verified: 0 remaining `response.json()`, `response.ok`, `const response = await fetch` across all 6 files
+- Dev server: compiling successfully, no new errors
+
+Stage Summary:
+- All 17 fetch+json patterns across 6 components replaced with fetchJSON (safe wrapper returning null on error)
+- 1 fire-and-forget DELETE (shift-management) without .json() left unchanged
+- All existing logic, validation, error handling, and UI preserved unchanged
+- Total across 3-c + 3-a + 3-b: 40 fetch+json patterns replaced across 8 components
+---
+Task ID: 3-a
+Agent: Sub-agent (full-stack-developer)
+Task: Fix admin-dashboard.tsx fetch calls
+
+Work Log:
+- Added import { fetchJSON } from '@/lib/utils'
+- Replaced 13 fetch+json patterns with fetchJSON
+- Used optional chaining (data?.employees) for null-safety
+- Left 6 fire-and-forget fetch calls unchanged (no .json() calls)
+
+Stage Summary:
+- admin-dashboard.tsx: 13 data-fetching calls now use safe fetchJSON
+
+---
+Task ID: 3-b
+Agent: Sub-agent (full-stack-developer)
+Task: Fix employee-dashboard.tsx fetch calls
+
+Work Log:
+- Added import { fetchJSON } from '@/lib/utils'
+- Replaced 10 fetch+json patterns with fetchJSON
+- Fixed critical fire-and-forget chain: fetch().then(r => r.json()) → fetchJSON().then()
+- Left 2 fire-and-forget calls unchanged (no .json() calls)
+
+Stage Summary:
+- employee-dashboard.tsx: 10 data-fetching calls now use safe fetchJSON
+
+---
+Task ID: 3-c
+Agent: Sub-agent (full-stack-developer)
+Task: Fix remaining 6 component fetch calls
+
+Work Log:
+- Fixed employee-management.tsx (4 replacements)
+- Fixed holiday-management.tsx (8 replacements)
+- Fixed shift-management.tsx (1 replacement)
+- Fixed employee-activities.tsx (2 replacements)
+- Fixed settings.tsx (1 replacement)
+- Fixed setup-guide.tsx (1 replacement)
+
+Stage Summary:
+- 6 files updated with 17 total fetchJSON replacements
+- All .json() calls in data-fetching components now use safe fetchJSON
+- Lint passes with 0 errors

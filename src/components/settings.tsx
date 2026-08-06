@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { PhotoPicker } from '@/components/photo-picker';
+import { fetchJSON } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 interface SettingsProps {
@@ -72,7 +73,7 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
     try {
       const apiEndpoint = user?.role === 'admin' ? '/api/admin' : '/api/employees';
       
-      const response = await fetch(apiEndpoint, {
+      const data = await fetchJSON(apiEndpoint, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -81,8 +82,7 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
         }),
       });
       
-      const data = await response.json();
-      if (data.success) {
+      if (data?.success) {
         console.log('Profile photo saved to database');
       }
     } catch (error) {
