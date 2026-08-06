@@ -129,14 +129,15 @@ const fallbackT = {
   syncPreviewCount: (count: number, source: string) => `${count} holidays found via ${source}`,
   syncNewDrafts: (count: number, source: string) => `${count} new holidays added as draft (Source: ${source})`,
   googleConnected: 'Google Calendar: Connected',
-  googleNotConnected: 'Google Calendar: Not connected (using Nager.Date)',
+  googleNotConnected: 'Google Calendar: Not connected (using India Post live source)',
   publishAll: 'Publish All',
   deleteDrafts: 'Delete Drafts',
   draftBanner: (count: number) => `${count} holiday${count === 1 ? '' : 's'} in draft`,
   published: 'Published',
   all: 'All',
+  sourceIndiaPost: 'India Post',
+  sourceOfficeHolidays: 'Office Holidays',
   sourceGoogle: 'Google',
-  sourceNager: 'Nager',
   sourceStatic: 'Static',
   year: 'Year',
   previewSync: 'Preview sync before importing',
@@ -144,15 +145,17 @@ const fallbackT = {
 
 function getSyncSourceLabel(source?: string | null): string | null {
   if (!source) return null;
+  if (source === 'india-post') return 'India Post';
+  if (source === 'office-holidays-ics') return 'Office Holidays';
   if (source === 'google-calendar') return 'Google';
-  if (source === 'nager-date') return 'Nager';
   if (source === 'static-database') return 'Static';
   return source;
 }
 
 function getSourceDisplayName(source: string): string {
+  if (source === 'india-post') return 'India Post';
+  if (source === 'office-holidays-ics') return 'Office Holidays iCal';
   if (source === 'google-calendar') return 'Google Calendar';
-  if (source === 'nager-date') return 'Nager.Date';
   if (source === 'static-database') return 'Static Database';
   return source;
 }
@@ -564,12 +567,12 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                   {syncPreview.hasGoogleKey ? (
                     <span className="text-[10px] sm:text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                       <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-                      {fallbackT.googleConnected} 🟢
+                      {fallbackT.googleConnected}
                     </span>
                   ) : (
                     <span className="text-[10px] sm:text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                       <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
-                      {fallbackT.googleNotConnected} 🟡
+                      {fallbackT.googleNotConnected}
                     </span>
                   )}
                 </div>
@@ -647,7 +650,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                   <div className="max-h-[80px] overflow-y-auto space-y-0.5">
                     {syncPreview.holidays.slice(0, 10).map((h, i) => (
                       <p key={i} className="text-muted-foreground truncate">
-                        {h.date} — {h.name}
+                        {h.date} - {h.name}
                       </p>
                     ))}
                     {syncPreview.holidays.length > 10 && (

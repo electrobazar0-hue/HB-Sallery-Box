@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// Fallback: Static Indian Holidays
-const FALLBACK_HOLIDAYS: Record<string, Array<{ date: string; name: string; type: string }>> = {
+type HolidayItem = { date: string; name: string; type: string };
+type HolidaySource = 'india-post' | 'office-holidays-ics' | 'google-calendar' | 'static-database';
+
+const INDIA_POST_HOLIDAYS_URL = 'https://www.indiapost.gov.in/holidays-list';
+const OFFICE_HOLIDAYS_ICS_URL = 'https://www.officeholidays.com/ics-clean/india';
+
+const FALLBACK_HOLIDAYS: Record<string, HolidayItem[]> = {
   '2025': [
     { date: '2025-01-01', name: "New Year's Day", type: 'company' },
     { date: '2025-01-14', name: 'Makar Sankranti / Pongal', type: 'festival' },
@@ -52,84 +57,244 @@ const FALLBACK_HOLIDAYS: Record<string, Array<{ date: string; name: string; type
 
 const GOOGLE_CALENDAR_ID = 'en.indian#holiday@group.v.calendar.google.com';
 
-interface NagerDateHoliday {
-  date: string;
-  localName: string;
-  name: string;
-  countryCode: string;
-  fixed: boolean;
-  global: boolean;
-  types: string[];
-}
-
 interface GoogleCalendarEvent {
-  id?: string;
   summary: string;
-  description?: string;
   start: { date?: string; dateTime?: string };
-  end: { date?: string; dateTime?: string };
 }
 
 function classifyHolidayType(name: string): string {
   const lower = name.toLowerCase();
-  const nationalKeywords = ['republic day', 'independence day', 'gandhi jayanti'];
-  if (nationalKeywords.some(k => lower.includes(k))) return 'national';
-  
-  const festivalKeywords = ['holi', 'diwali', 'eid', 'christmas', 'dussehra', 'navratri', 
-    'janmashtami', 'ganesh', 'ram navami', 'pongal', 'sankranti', 'buddha', 'shivaratri',
-    'bakri', 'muharram', 'guru', 'raksha', 'lohri', 'baisakhi', 'vaisakhi', 'onam',
-    'bhai', 'govardhan', 'makar', 'easter', 'good friday', 'ambedkar'];
-  if (festivalKeywords.some(k => lower.includes(k))) return 'festival';
-  
+
+  if (['republic day', 'independence day', 'gandhi jayanti', 'mahatma gandhi'].some((keyword) => lower.includes(keyword))) {
+    return 'national';
+  }
+
+  const festivalKeywords = [
+    'holi', 'diwali', 'eid', 'id ul', 'christmas', 'dussehra', 'navratri',
+    'janmashtami', 'ganesh', 'ram navami', 'pongal', 'sankranti', 'buddha',
+    'shivaratri', 'bakri', 'muharram', 'guru', 'raksha', 'lohri', 'baisakhi',
+    'vaisakhi', 'onam', 'bhai', 'govardhan', 'makar', 'easter', 'good friday',
+    'ambedkar', 'mahavir', 'prophet', 'mohammad', 'milad',
+  ];
+
+  if (festivalKeywords.some((keyword) => lower.includes(keyword))) return 'festival';
   if (lower.includes('sunday') || lower.includes('saturday')) return 'weekly';
-  
   return 'festival';
 }
 
-// Source 1: Nager.Date API (Free, No API Key)
-async function fetchNagerDateHolidays(year: number): Promise<Array<{ date: string; name: string; type: string }>> {
-  try {
-    const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/IN`, {
-      next: { revalidate: 86400 },
-    });
-    if (!response.ok) throw new Error(`Nager.Date returned ${response.status}`);
-    const data: NagerDateHoliday[] = await response.json();
-    return data
-      .filter(h => h.global) // Only national/global holidays
-      .map(h => ({
-        date: h.date,
-        name: h.localName || h.name,
-        type: classifyHolidayType(h.name),
-      }));
-  } catch (err) {
-    console.warn('Nager.Date API failed:', err);
-    return [];
-  }
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
 }
 
-// Source 2: Google Calendar API (Needs API Key)
-async function fetchGoogleCalendarHolidays(year: number): Promise<Array<{ date: string; name: string; type: string }>> {
+function normalizeHtmlText(html: string): string {
+  return decodeHtmlEntities(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseIndiaPostDate(value: string): string | null {
+  const match = value.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
+  if (!match) return null;
+
+  const months: Record<string, string> = {
+    january: '01',
+    february: '02',
+    march: '03',
+    april: '04',
+    may: '05',
+    june: '06',
+    july: '07',
+    august: '08',
+    september: '09',
+    october: '10',
+    november: '11',
+    december: '12',
+  };
+
+  const month = months[match[2].toLowerCase()];
+  if (!month) return null;
+
+  return `${match[3]}-${month}-${match[1].padStart(2, '0')}`;
+}
+
+function dedupeAndSortHolidays(holidays: HolidayItem[]): HolidayItem[] {
+  const seen = new Set<string>();
+  return holidays
+    .filter((holiday) => {
+      const key = `${holiday.date}:${holiday.name.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function parseIndiaPostHolidays(html: string, year: number): HolidayItem[] {
+  const text = normalizeHtmlText(html);
+  const sectionMarker = `All India Holidays - ${year}`;
+  const sectionStart = text.indexOf(sectionMarker);
+  if (sectionStart === -1) return [];
+
+  let section = text.slice(sectionStart + sectionMarker.length);
+  const tableHeader = section.match(/Holiday Name\s+Date\s+Day/i);
+  if (tableHeader?.index !== undefined) {
+    section = section.slice(tableHeader.index + tableHeader[0].length);
+  }
+
+  const monthNames = 'January|February|March|April|May|June|July|August|September|October|November|December';
+  const days = 'Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday';
+  const rowPattern = new RegExp(`\\s*(.+?)\\s+(\\d{1,2}-(?:${monthNames})-${year})\\s+(?:${days})`, 'gi');
+  const holidays: HolidayItem[] = [];
+
+  for (const match of section.matchAll(rowPattern)) {
+    const date = parseIndiaPostDate(match[2]);
+    const name = match[1].replace(/\s+/g, ' ').trim();
+    if (!date || !name || name.toLowerCase().includes('select year')) continue;
+
+    holidays.push({
+      date,
+      name,
+      type: classifyHolidayType(name),
+    });
+  }
+
+  return dedupeAndSortHolidays(holidays);
+}
+
+async function fetchIndiaPostHolidays(year: number): Promise<HolidayItem[]> {
+  const response = await fetch(INDIA_POST_HOLIDAYS_URL, {
+    next: { revalidate: 86400 },
+    headers: { 'User-Agent': 'HB-Sallery-Box/1.0' },
+  });
+
+  if (!response.ok) throw new Error(`India Post returned ${response.status}`);
+
+  const html = await response.text();
+  const holidays = parseIndiaPostHolidays(html, year);
+  if (holidays.length === 0) throw new Error(`India Post did not publish All India holidays for ${year}`);
+
+  return holidays;
+}
+
+function parseIcsDate(value: string): string | null {
+  const match = value.match(/^(\d{4})(\d{2})(\d{2})/);
+  if (!match) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+function parseIcsText(value: string): string {
+  return value
+    .replace(/\\n/g, ' ')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+    .replace(/^India:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseOfficeHolidaysIcs(ics: string, year: number): HolidayItem[] {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, '');
+  const holidays: HolidayItem[] = [];
+
+  for (const match of unfolded.matchAll(/BEGIN:VEVENT([\s\S]*?)END:VEVENT/g)) {
+    const block = match[1];
+    const dateMatch = block.match(/^DTSTART(?:;[^:]*)?:(\d{8})/m);
+    const summaryMatch = block.match(/^SUMMARY(?:;[^:]*)?:(.+)$/m);
+    const date = dateMatch ? parseIcsDate(dateMatch[1]) : null;
+    const name = summaryMatch ? parseIcsText(summaryMatch[1]) : '';
+
+    if (!date?.startsWith(`${year}-`) || !name) continue;
+
+    holidays.push({
+      date,
+      name,
+      type: classifyHolidayType(name),
+    });
+  }
+
+  return dedupeAndSortHolidays(holidays);
+}
+
+async function fetchOfficeHolidaysCalendar(year: number): Promise<HolidayItem[]> {
+  const response = await fetch(OFFICE_HOLIDAYS_ICS_URL, {
+    next: { revalidate: 86400 },
+    headers: { 'User-Agent': 'HB-Sallery-Box/1.0' },
+  });
+
+  if (!response.ok) throw new Error(`Office Holidays iCal returned ${response.status}`);
+
+  const ics = await response.text();
+  const holidays = parseOfficeHolidaysIcs(ics, year);
+  if (holidays.length === 0) throw new Error(`Office Holidays iCal did not include ${year}`);
+
+  return holidays;
+}
+
+async function fetchGoogleCalendarHolidays(year: number): Promise<HolidayItem[]> {
   const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
-  if (!apiKey) throw new Error('No API key');
+  if (!apiKey) throw new Error('No Google Calendar API key');
 
   const calendarId = encodeURIComponent(GOOGLE_CALENDAR_ID);
   const url = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?key=${apiKey}&timeMin=${year}-01-01T00:00:00Z&timeMax=${year}-12-31T23:59:59Z&singleEvents=true&maxResults=100&orderBy=startTime`;
 
   const response = await fetch(url, { next: { revalidate: 86400 } });
   if (!response.ok) throw new Error(`Google Calendar API returned ${response.status}`);
+
   const data = await response.json();
-  if (!data.items) throw new Error('No items');
+  if (!data.items) throw new Error('No Google Calendar items');
 
   return data.items
     .map((event: GoogleCalendarEvent) => ({
       date: event.start?.date || event.start?.dateTime?.split('T')[0] || '',
-      name: event.summary || 'Unknown Holiday',
-      type: classifyHolidayType(event.summary),
+      name: event.summary || 'Indian Holiday',
+      type: classifyHolidayType(event.summary || ''),
     }))
-    .filter(h => h.date);
+    .filter((holiday: HolidayItem) => holiday.date);
 }
 
-// Sync holidays from APIs into database (all as DRAFT)
+async function getIndianHolidays(year: number): Promise<{ holidays: HolidayItem[]; source: HolidaySource }> {
+  try {
+    const holidays = await fetchIndiaPostHolidays(year);
+    if (holidays.length > 0) return { holidays, source: 'india-post' };
+  } catch (error) {
+    console.warn('India Post holiday fetch failed:', error);
+  }
+
+  try {
+    const holidays = await fetchOfficeHolidaysCalendar(year);
+    if (holidays.length > 0) return { holidays, source: 'office-holidays-ics' };
+  } catch (error) {
+    console.warn('Office Holidays iCal fetch failed:', error);
+  }
+
+  if (process.env.GOOGLE_CALENDAR_API_KEY) {
+    try {
+      const holidays = await fetchGoogleCalendarHolidays(year);
+      if (holidays.length > 0) return { holidays, source: 'google-calendar' };
+    } catch (error) {
+      console.warn('Google Calendar failed:', error);
+    }
+  }
+
+  return {
+    holidays: (FALLBACK_HOLIDAYS[String(year)] || FALLBACK_HOLIDAYS['2026']).map((holiday) => ({ ...holiday })),
+    source: 'static-database',
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -139,45 +304,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Organization ID and Admin ID required' }, { status: 400 });
     }
 
-    const currentYear = yearParam || new Date().getFullYear();
-    let holidays: Array<{ date: string; name: string; type: string }> = [];
-    let source = 'none';
-
-    // Try Google Calendar first (if API key set)
-    const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
-    if (apiKey) {
-      try {
-        holidays = await fetchGoogleCalendarHolidays(currentYear);
-        if (holidays.length > 0) {
-          source = 'google-calendar';
-          console.log(`✅ Fetched ${holidays.length} holidays from Google Calendar`);
-        }
-      } catch (err) {
-        console.warn('Google Calendar failed:', err);
-      }
-    }
-
-    // Fallback to Nager.Date
-    if (holidays.length === 0) {
-      try {
-        holidays = await fetchNagerDateHolidays(currentYear);
-        if (holidays.length > 0) {
-          source = 'nager-date';
-          console.log(`✅ Fetched ${holidays.length} holidays from Nager.Date`);
-        }
-      } catch (err) {
-        console.warn('Nager.Date failed:', err);
-      }
-    }
-
-    // Final fallback to static database
-    if (holidays.length === 0) {
-      const fallbackList = FALLBACK_HOLIDAYS[String(currentYear)] || FALLBACK_HOLIDAYS['2025'];
-      holidays = fallbackList.map(h => ({ ...h }));
-      source = 'static-database';
-      console.log(`✅ Using ${holidays.length} static holidays`);
-    }
-
+    const year = Number(yearParam) || new Date().getFullYear();
+    const { holidays, source } = await getIndianHolidays(year);
     let added = 0;
     let skipped = 0;
     let errors = 0;
@@ -199,24 +327,25 @@ export async function POST(request: NextRequest) {
             holidayName: holiday.name,
             date: holiday.date,
             holidayType: holiday.type,
-            description: `Synced from ${source === 'google-calendar' ? 'Google Calendar' : source === 'nager-date' ? 'Nager.Date API' : 'Offline Database'}`,
+            description: `Synced from ${source === 'india-post' ? 'India Post' : source === 'office-holidays-ics' ? 'Office Holidays iCal' : source === 'google-calendar' ? 'Google Calendar' : 'Offline Database'}`,
             createdBy: adminId,
-            status: 'draft', // ALL synced holidays start as DRAFT
+            status: 'draft',
             syncSource: source,
             isPaid: true,
           },
         });
         added++;
-      } catch (err) {
-        console.error('Error saving holiday:', err);
+      } catch (error) {
+        console.error('Error saving holiday:', error);
         errors++;
       }
     }
 
-    const sourceLabels: Record<string, string> = {
-      'google-calendar': `Google Calendar (Live)`,
-      'nager-date': `Nager.Date API (Live)`,
-      'static-database': `Offline Database (Static)`,
+    const sourceLabels: Record<HolidaySource, string> = {
+      'india-post': 'India Post (Government Live)',
+      'office-holidays-ics': 'Office Holidays iCal (Live)',
+      'google-calendar': 'Google Calendar (Live)',
+      'static-database': 'Offline Database (Static)',
     };
 
     return NextResponse.json({
@@ -226,8 +355,8 @@ export async function POST(request: NextRequest) {
       errors,
       total: holidays.length,
       source,
-      sourceLabel: sourceLabels[source] || source,
-      year: currentYear,
+      sourceLabel: sourceLabels[source],
+      year,
       message: `${added} new holidays added as draft, ${skipped} already existed`,
     });
   } catch (error) {
@@ -236,40 +365,10 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - Preview holidays before syncing
 export async function GET(request: NextRequest) {
   const yearParam = request.nextUrl.searchParams.get('year');
-  const year = yearParam ? parseInt(yearParam) : new Date().getFullYear();
-
-  let holidays: Array<{ date: string; name: string; type: string }> = [];
-  let source = 'none';
-
-  // Try Google Calendar
-  const apiKey = process.env.GOOGLE_CALENDAR_API_KEY;
-  if (apiKey) {
-    try {
-      holidays = await fetchGoogleCalendarHolidays(year);
-      if (holidays.length > 0) source = 'google-calendar';
-    } catch (err) {
-      console.warn('Google Calendar preview failed:', err);
-    }
-  }
-
-  // Fallback Nager.Date
-  if (holidays.length === 0) {
-    try {
-      holidays = await fetchNagerDateHolidays(year);
-      if (holidays.length > 0) source = 'nager-date';
-    } catch (err) {
-      console.warn('Nager.Date preview failed:', err);
-    }
-  }
-
-  // Final fallback
-  if (holidays.length === 0) {
-    holidays = (FALLBACK_HOLIDAYS[String(year)] || FALLBACK_HOLIDAYS['2025']).map(h => ({ ...h }));
-    source = 'static-database';
-  }
+  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+  const { holidays, source } = await getIndianHolidays(year);
 
   return NextResponse.json({
     success: true,
@@ -277,6 +376,6 @@ export async function GET(request: NextRequest) {
     count: holidays.length,
     year,
     source,
-    hasGoogleKey: !!apiKey,
+    hasGoogleKey: !!process.env.GOOGLE_CALENDAR_API_KEY,
   });
 }

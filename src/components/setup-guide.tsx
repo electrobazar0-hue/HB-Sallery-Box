@@ -34,26 +34,26 @@ export function SetupGuide() {
   const steps: SetupStep[] = [
     {
       id: 1,
-      title: 'Free PostgreSQL Database Banao',
-      description: 'Neon.tech pe free PostgreSQL database create karo',
+      title: 'Supabase PostgreSQL Database Banao',
+      description: 'Supabase pe PostgreSQL project create karo',
       details: [
-        'https://neon.tech pe jao aur free account banao',
-        '"Create Project" click karo',
+        'https://supabase.com pe jao aur free account banao',
+        '"New project" click karo',
         'Region select karo (nearest to your users)',
-        'Database create hone do',
+        'Database password safe rakhna',
       ],
-      link: { text: 'neon.tech pe jao →', url: 'https://neon.tech' },
+      link: { text: 'Supabase pe jao ->', url: 'https://supabase.com' },
       completed: false,
     },
     {
       id: 2,
       title: 'Connection String Copy Karo',
-      description: 'Neon dashboard se DATABASE_URL copy karo',
+      description: 'Supabase dashboard se DATABASE_URL copy karo',
       details: [
-        'Neon dashboard me apni database open karo',
-        '"Connection Details" tab me jao',
-        'Connection string copy karo (postgres://user:pass@host/db?sslmode=require)',
-        'Format aisa hoga: postgresql://neondb_owner:xxxx@ep-xxx.region.neon.tech/neondb?sslmode=require',
+        'Supabase dashboard me project open karo',
+        'Settings -> Database -> Connection string me jao',
+        'Direct connection URI copy karo',
+        'Format aisa hoga: postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres',
       ],
       completed: false,
     },
@@ -62,12 +62,12 @@ export function SetupGuide() {
       title: 'Vercel me Environment Variables Add Karo',
       description: 'Vercel project settings me 2 variables add karo',
       details: [
-        'Vercel dashboard → Apna Project → Settings → Environment Variables',
+        'Vercel dashboard -> Apna Project -> Settings -> Environment Variables',
         'Variable 1: Name = DATABASE_URL, Value = copied connection string',
         'Variable 2: Name = NEXTAUTH_SECRET, Value = koi random string (e.g. hb-salary-box-secret-key-2024)',
-        'Dono variables me "Production" select karo → Save',
+        'Dono variables me "Production" select karo -> Save',
       ],
-      link: { text: 'Vercel Dashboard →', url: 'https://vercel.com/dashboard' },
+      link: { text: 'Vercel Dashboard ->', url: 'https://vercel.com/dashboard' },
       completed: false,
     },
     {
@@ -75,8 +75,8 @@ export function SetupGuide() {
       title: 'Redeploy Karo',
       description: 'Vercel pe redeploy karo taaki new env vars apply ho',
       details: [
-        'Vercel dashboard → Deployments tab',
-        'Latest deployment pe "..." menu → "Redeploy"',
+        'Vercel dashboard -> Deployments tab',
+        'Latest deployment pe "..." menu -> "Redeploy"',
         'Ya phir naya code push karo GitHub pe, auto-deploy hoga',
         'Redeploy ke baad ye page automatically database check karega',
       ],
@@ -93,7 +93,7 @@ export function SetupGuide() {
       
       if (data?.success && data.connected) {
         setStatus('connected');
-        toast({ title: 'Database Connected! ✅', description: 'App is ready. Page reload ho rahi hai...' });
+        toast({ title: 'Database Connected!', description: 'App is ready. Page reload ho rahi hai...' });
         setTimeout(() => window.location.reload(), 2000);
       } else {
         setStatus('not-configured');
@@ -113,7 +113,7 @@ export function SetupGuide() {
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopied(id);
-    toast({ title: 'Copied! ✅' });
+    toast({ title: 'Copied!' });
     setTimeout(() => setCopied(null), 2000);
   };
 
@@ -289,7 +289,7 @@ export function SetupGuide() {
             size="lg"
             className="bg-emerald-500 hover:bg-emerald-600 text-white px-8 gap-2"
           >
-            <RefreshCcw className={`w-4 h-4 ${status === 'checking' ? 'animate-spin' : ''}`} />
+            <RefreshCcw className="w-4 h-4" />
             Check Database Connection
           </Button>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
@@ -309,7 +309,7 @@ export function SetupGuide() {
               <Server className="w-3 h-3" /> PostgreSQL Required
             </span>
             <span className="flex items-center gap-1">
-              <Zap className="w-3 h-3" /> Neon Free Tier Works
+              <Zap className="w-3 h-3" /> Supabase Free Tier Works
             </span>
             <span className="flex items-center gap-1">
               <Shield className="w-3 h-3" /> SSL Required
