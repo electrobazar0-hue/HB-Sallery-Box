@@ -46,6 +46,25 @@ export async function GET(request: NextRequest) {
     let where: Record<string, unknown> = {};
 
     if (employeeId) {
+      const employee = await db.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, active: true },
+      });
+
+      if (!employee) {
+        return NextResponse.json(
+          { error: 'Employee not found. Please log in again or ask admin to add this employee.' },
+          { status: 404 },
+        );
+      }
+
+      if (employee.active === false) {
+        return NextResponse.json(
+          { error: 'Employee is inactive. Please contact admin.' },
+          { status: 403 },
+        );
+      }
+
       where.employeeId = employeeId;
     } else if (organizationId) {
       where.employee = { organizationId };
@@ -113,6 +132,27 @@ export async function POST(request: NextRequest) {
     if (type !== 'in' && type !== 'out') {
       console.error('Invalid punch type:', type);
       return NextResponse.json({ error: 'Invalid punch type. Must be "in" or "out"' }, { status: 400 });
+    }
+
+    const employee = await db.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, active: true },
+    });
+
+    if (!employee) {
+      console.error('Attendance attempted for missing employee:', employeeId);
+      return NextResponse.json(
+        { error: 'Employee not found. Please log in again or ask admin to add this employee.' },
+        { status: 404 },
+      );
+    }
+
+    if (employee.active === false) {
+      console.error('Attendance attempted for inactive employee:', employeeId);
+      return NextResponse.json(
+        { error: 'Employee is inactive. Please contact admin.' },
+        { status: 403 },
+      );
     }
 
     // Use LOCAL timestamp from device (matches user's local timezone)

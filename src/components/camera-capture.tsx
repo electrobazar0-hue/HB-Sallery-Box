@@ -17,6 +17,7 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
   const [error, setError] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mountedRef = useRef(true);
@@ -29,12 +30,49 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
       });
       streamRef.current = null;
     }
+    setCameraStream(null);
     setIsActive(false);
     setIsStarting(false);
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!open || capturedPhoto || !cameraStream || !videoRef.current) return;
+
+    const video = videoRef.current;
+    let cancelled = false;
+    video.srcObject = cameraStream;
+
+    const playPreview = async () => {
+      try {
+        await video.play();
+        if (!cancelled && mountedRef.current) {
+          setIsActive(true);
+          setIsStarting(false);
+          setError(null);
+        }
+      } catch (err) {
+        console.error('Camera preview error:', err);
+        if (!cancelled && mountedRef.current) {
+          setIsActive(false);
+          setError('Camera preview could not start. Please close and try again.');
+        }
+      }
+    };
+
+    video.onloadedmetadata = playPreview;
+    void playPreview();
+
+    return () => {
+      cancelled = true;
+      video.onloadedmetadata = null;
+      if (video.srcObject === cameraStream) {
+        video.srcObject = null;
+      }
+    };
+  }, [open, capturedPhoto, cameraStream]);
 
   // Start camera
   const startCamera = useCallback(async () => {
@@ -62,15 +100,8 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
       }
 
       streamRef.current = mediaStream;
-      
-      // Set video source after stream is ready
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        // Wait for video to be ready
-        await videoRef.current.play();
-      }
-      
-      setIsActive(true);
+      setCameraStream(mediaStream);
+      setIsActive(false);
       setError(null);
     } catch (err) {
       if (!mountedRef.current) return;
@@ -198,7 +229,7 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
   }, [open, stopCameraStream]);
 
   // Show loading when dialog is open but camera is not active yet
-  const showLoading = open && !isActive && !capturedPhoto && !error && isStarting;
+  const showLoading = open && !isActive && !capturedPhoto && !error && (isStarting || !!cameraStream);
   const showError = error && !capturedPhoto && !showLoading;
   const showGuide = !capturedPhoto && isActive && !error;
 
@@ -217,6 +248,10 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
               autoPlay
               playsInline
               muted
+              onCanPlay={() => {
+                setIsActive(true);
+                setIsStarting(false);
+              }}
               className="w-full h-full object-cover"
             />
           )}

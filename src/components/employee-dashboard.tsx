@@ -219,63 +219,97 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     }
   }, [notifPermission, requestNotifPermission]);
 
-  // Fetch attendance history
+  const applyAttendanceSnapshot = useCallback((records: AttendanceRecord[]) => {
+    setAttendanceHistory(records);
+
+    const today = getLocalDateKey();
+    const todayRecord = records.find((a) => a.date === today);
+    const openRecord = records.find((a) => a.punchIn && !a.punchOut);
+    const activeRecord = todayRecord?.punchIn ? todayRecord : openRecord;
+
+    if (activeRecord?.punchIn) {
+      setIsPunchedIn(!activeRecord.punchOut);
+      setPunchTime({ in: activeRecord.punchIn, out: activeRecord.punchOut });
+      setPunchInLocation(
+        activeRecord.punchInLat && activeRecord.punchInLng
+          ? { lat: activeRecord.punchInLat, lng: activeRecord.punchInLng }
+          : null,
+      );
+      setPunchOutLocation(
+        activeRecord.punchOutLat && activeRecord.punchOutLng
+          ? { lat: activeRecord.punchOutLat, lng: activeRecord.punchOutLng }
+          : null,
+      );
+      return;
+    }
+
+    setIsPunchedIn(false);
+    setPunchTime({});
+    setPunchInLocation(null);
+    setPunchOutLocation(null);
+  }, []);
+
+  const refreshAttendance = useCallback(async (signal?: AbortSignal) => {
+    if (!user?.id) {
+      applyAttendanceSnapshot([]);
+      return [];
+    }
+
+    const data = await fetchJSON<{
+      attendance?: AttendanceRecord[];
+      error?: string;
+      _httpError?: boolean;
+    }>(`/api/attendance?employeeId=${encodeURIComponent(user.id)}`, { cache: 'no-store', signal });
+
+    if (signal?.aborted) return [];
+    if (!data || data._httpError) {
+      throw new Error(data?.error || 'Failed to fetch attendance');
+    }
+
+    const records = data.attendance || [];
+    applyAttendanceSnapshot(records);
+    return records;
+  }, [user?.id, applyAttendanceSnapshot]);
+
+  // Fetch attendance history and rehydrate punch state after refresh/tab focus.
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      applyAttendanceSnapshot([]);
+      return;
+    }
 
-    let mounted = true;
+    const controller = new AbortController();
 
-    const fetchAttendance = async () => {
-      try {
-        const data = await fetchJSON(`/api/attendance?employeeId=${user.id}`, { cache: 'no-store' });
-        if (!data) {
-          throw new Error('Failed to fetch attendance');
-        }
-        
-        if (mounted && data.attendance) {
-          const records = data.attendance as AttendanceRecord[];
-          setAttendanceHistory(records);
-
-          const today = getLocalDateKey();
-          const todayRecord = records.find((a) => a.date === today);
-
-          if (todayRecord?.punchIn) {
-            setIsPunchedIn(!todayRecord.punchOut);
-            setPunchTime({ in: todayRecord.punchIn, out: todayRecord.punchOut });
-            setPunchInLocation(
-              todayRecord.punchInLat && todayRecord.punchInLng
-                ? { lat: todayRecord.punchInLat, lng: todayRecord.punchInLng }
-                : null,
-            );
-            setPunchOutLocation(
-              todayRecord.punchOutLat && todayRecord.punchOutLng
-                ? { lat: todayRecord.punchOutLat, lng: todayRecord.punchOutLng }
-                : null,
-            );
-          } else {
-            setIsPunchedIn(false);
-            setPunchTime({});
-            setPunchInLocation(null);
-            setPunchOutLocation(null);
-          }
-        }
-      } catch (error) {
+    const loadAttendance = () => {
+      refreshAttendance(controller.signal).catch((error) => {
+        if (controller.signal.aborted) return;
         console.error('Error fetching attendance:', error);
-        // Don't set demo data - keep empty for fresh employee
-        if (mounted) {
-          setAttendanceHistory([]);
-          setIsPunchedIn(false);
-          setPunchTime({});
-          setPunchInLocation(null);
-          setPunchOutLocation(null);
-        }
+        applyAttendanceSnapshot([]);
+      });
+    };
+
+    const reloadAttendance = () => {
+      refreshAttendance().catch((error) => {
+        console.error('Error refreshing attendance:', error);
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        reloadAttendance();
       }
     };
 
-    fetchAttendance();
+    loadAttendance();
+    window.addEventListener('focus', reloadAttendance);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    return () => { mounted = false; };
-  }, [user?.id]);
+    return () => {
+      controller.abort();
+      window.removeEventListener('focus', reloadAttendance);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.id, refreshAttendance, applyAttendanceSnapshot]);
 
   // Fetch salary history
   useEffect(() => {
@@ -553,7 +587,8 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       return;
     }
 
-    console.log('Starting punch:', pendingPunchType);
+    const punchType = pendingPunchType;
+    console.log('Starting punch:', punchType);
     setShowCamera(false);
     setIsLoading(true);
 
@@ -605,7 +640,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       // Send to API with LOCAL timestamp and pre-formatted local times
       const payload = {
         employeeId: user.id,
-        type: pendingPunchType,
+        type: punchType,
         latitude: coords.latitude,
         longitude: coords.longitude,
         photo,
@@ -633,8 +668,8 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       const timeInfo = data.accurateTime || accurateTime;
       const savedRecord = data.attendance as AttendanceRecord | undefined;
 
-      if (pendingPunchType === 'in') {
-        setPunchTime({ ...punchTime, in: timeInfo });
+      if (punchType === 'in') {
+        setPunchTime((prev) => ({ ...prev, in: timeInfo, out: savedRecord?.punchOut }));
         setPunchInLocation({ lat: coords.latitude, lng: coords.longitude });
         setIsPunchedIn(true);
 
@@ -664,7 +699,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         };
         setAttendanceHistory(prev => [newRecord, ...prev.filter(a => a.date !== date)]);
       } else {
-        setPunchTime({ ...punchTime, out: timeInfo });
+        setPunchTime((prev) => ({ ...prev, in: savedRecord?.punchIn || prev.in, out: timeInfo }));
         setPunchOutLocation({ lat: coords.latitude, lng: coords.longitude });
         setIsPunchedIn(false);
 
@@ -701,6 +736,12 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
           return [updatedRecord, ...prev.filter(record => record.date !== updatedRecord.date)];
         });
+      }
+
+      try {
+        await refreshAttendance();
+      } catch (refreshError) {
+        console.error('Error refreshing attendance after punch:', refreshError);
       }
     } catch (error) {
       console.error('Punch error:', error);

@@ -40,6 +40,41 @@ export function PhotoPicker({
     }
   }, [open, currentPhoto]);
 
+  useEffect(() => {
+    if (!open || !cameraActive || !cameraStream || !videoRef.current) return;
+
+    const video = videoRef.current;
+    let cancelled = false;
+    video.srcObject = cameraStream;
+
+    const playPreview = async () => {
+      try {
+        await video.play();
+        if (!cancelled) {
+          setCameraReady(true);
+          setError(null);
+        }
+      } catch (err) {
+        console.error('Video preview error:', err);
+        if (!cancelled) {
+          setCameraReady(false);
+          setError('Camera preview could not start. Please close and try again.');
+        }
+      }
+    };
+
+    video.onloadedmetadata = playPreview;
+    void playPreview();
+
+    return () => {
+      cancelled = true;
+      video.onloadedmetadata = null;
+      if (video.srcObject === cameraStream) {
+        video.srcObject = null;
+      }
+    };
+  }, [open, cameraActive, cameraStream]);
+
   // Start camera
   const startCamera = useCallback(async () => {
     try {
@@ -53,19 +88,6 @@ export function PhotoPicker({
       
       setCameraStream(stream);
       setCameraActive(true);
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.onloadedmetadata = () => {
-          setCameraReady(true);
-        };
-        // Start playing
-        try {
-          await videoRef.current.play();
-        } catch (e) {
-          console.error('Video play error:', e);
-        }
-      }
     } catch (err) {
       let message = 'Camera access denied. Please allow camera access or use gallery.';
       if (err instanceof Error) {
@@ -89,6 +111,9 @@ export function PhotoPicker({
     }
     setCameraActive(false);
     setCameraReady(false);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
   }, [cameraStream]);
 
   // Capture photo from camera
@@ -204,6 +229,7 @@ export function PhotoPicker({
                 autoPlay
                 playsInline
                 muted
+                onCanPlay={() => setCameraReady(true)}
                 className="w-full h-full object-cover transform scale-x-[-1]"
               />
             ) : (
