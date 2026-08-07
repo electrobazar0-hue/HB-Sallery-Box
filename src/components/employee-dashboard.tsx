@@ -504,6 +504,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   };
 
   const { isLeave: isTodayApprovedLeave, leaveRecord: todayLeaveRecord } = checkIfTodayIsApprovedLeave();
+  const hasCompletedAttendanceToday = Boolean(punchTime.in && punchTime.out && !isPunchedIn);
 
   const menuItems = [
     { id: 'home', label: t.dashboard.home, icon: Home },
@@ -667,17 +668,35 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       const accuracyInfo = data.accuracy ? ` (±${data.accuracy.toFixed(0)}m accuracy)` : '';
       const timeInfo = data.accurateTime || accurateTime;
       const savedRecord = data.attendance as AttendanceRecord | undefined;
+      const alreadyRecorded = Boolean(data.alreadyRecorded);
 
       if (punchType === 'in') {
-        setPunchTime((prev) => ({ ...prev, in: timeInfo, out: savedRecord?.punchOut }));
-        setPunchInLocation({ lat: coords.latitude, lng: coords.longitude });
-        setIsPunchedIn(true);
+        setPunchTime((prev) => ({
+          ...prev,
+          in: savedRecord?.punchIn || timeInfo,
+          out: savedRecord?.punchOut,
+        }));
+        setPunchInLocation(
+          savedRecord?.punchInLat && savedRecord.punchInLng
+            ? { lat: savedRecord.punchInLat, lng: savedRecord.punchInLng }
+            : { lat: coords.latitude, lng: coords.longitude },
+        );
+        setPunchOutLocation(
+          savedRecord?.punchOutLat && savedRecord.punchOutLng
+            ? { lat: savedRecord.punchOutLat, lng: savedRecord.punchOutLng }
+            : null,
+        );
+        setIsPunchedIn(!savedRecord?.punchOut);
 
         // Add notification with error handling
         try {
           addNotification({
-            title: t.notifications.punchInSuccess || 'Punched In Successfully',
-            body: `${t.dashboard.punchedInAtTime || 'Punched in at'} ${timeInfo}${accuracyInfo}`,
+            title: alreadyRecorded
+              ? (savedRecord?.punchOut ? 'Attendance Already Completed' : 'Already Punched In')
+              : (t.notifications.punchInSuccess || 'Punched In Successfully'),
+            body: alreadyRecorded
+              ? (data.message || 'Your attendance record is already saved.')
+              : `${t.dashboard.punchedInAtTime || 'Punched in at'} ${timeInfo}${accuracyInfo}`,
             type: 'attendance',
             priority: 'high',
           });
@@ -1528,7 +1547,11 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                           <div>
                             <h2 className="text-xl font-bold mb-2">
-                              {isPunchedIn ? t.dashboard.checkedIn : t.dashboard.readyToCheckIn}
+                              {hasCompletedAttendanceToday
+                                ? 'Attendance Completed'
+                                : isPunchedIn
+                                  ? t.dashboard.checkedIn
+                                  : t.dashboard.readyToCheckIn}
                             </h2>
                             <div className="flex items-center gap-4 text-emerald-100">
                               {punchTime.in && (
@@ -1546,7 +1569,13 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                             </div>
                           </div>
                           <div className="flex gap-3">
-                            {!isPunchedIn ? (
+                            {hasCompletedAttendanceToday ? (
+                              <Button size="lg" disabled
+                                className="bg-white/20 text-white opacity-90">
+                                <Check className="h-5 w-5 mr-2" />
+                                Completed
+                              </Button>
+                            ) : !isPunchedIn ? (
                               <Button size="lg" onClick={() => handlePunch('in')}
                                 className="bg-white text-emerald-600 hover:bg-emerald-50">
                                 <Check className="h-5 w-5 mr-2" />

@@ -183,7 +183,16 @@ export async function POST(request: NextRequest) {
 
       if (existing && existing.punchIn) {
         console.log('Already punched in for today:', existing.punchIn);
-        return NextResponse.json({ error: 'Already punched in for today' }, { status: 400 });
+        return NextResponse.json({
+          success: true,
+          alreadyRecorded: true,
+          attendance: existing,
+          time: existing.punchIn.slice(0, 5),
+          accurateTime: existing.punchIn,
+          message: existing.punchOut
+            ? 'Attendance already completed for today'
+            : 'Already punched in for today',
+        });
       }
 
       if (existing) {
