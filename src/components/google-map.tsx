@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin } from 'lucide-react';
 
+type GoogleMapsMap = any;
+type GoogleMapsMarker = any;
+
 interface GoogleMapProps {
   lat: number;
   lng: number;
@@ -25,8 +28,8 @@ export function GoogleMap({
   className = '',
 }: GoogleMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
+  const mapInstanceRef = useRef<GoogleMapsMap | null>(null);
+  const markerRef = useRef<GoogleMapsMarker | null>(null);
   
   // Check if Google Maps is already loaded (synchronously)
   const isInitiallyLoaded = typeof window !== 'undefined' && window.google && window.google.maps;
@@ -83,11 +86,13 @@ export function GoogleMap({
   }, [isInitiallyLoaded]);
 
   useEffect(() => {
-    if (!isLoaded || !mapRef.current) return;
+    const googleMaps = window.google?.maps;
+
+    if (!isLoaded || !mapRef.current || !googleMaps) return;
 
     try {
       // Initialize map
-      const map = new google.maps.Map(mapRef.current, {
+      const map = new googleMaps.Map(mapRef.current, {
         center: { lat, lng },
         zoom,
         mapTypeId: 'roadmap',
@@ -104,17 +109,17 @@ export function GoogleMap({
 
       // Add marker if enabled
       if (showMarker) {
-        const marker = new google.maps.Marker({
+        const marker = new googleMaps.Marker({
           position: { lat, lng },
           map,
           title: markerLabel,
-          animation: google.maps.Animation.DROP,
+          animation: googleMaps.Animation.DROP,
         });
 
         markerRef.current = marker;
 
         // Add info window
-        const infoWindow = new google.maps.InfoWindow({
+        const infoWindow = new googleMaps.InfoWindow({
           content: `
             <div style="padding: 8px; font-family: system-ui, sans-serif;">
               <div style="font-weight: 600; margin-bottom: 4px;">${markerLabel}</div>
@@ -190,11 +195,4 @@ export function GoogleMap({
       style={{ width, height }}
     />
   );
-}
-
-// Type declaration for global window object
-declare global {
-  interface Window {
-    google?: Record<string, any>;
-  }
 }

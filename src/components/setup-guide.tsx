@@ -34,26 +34,26 @@ export function SetupGuide() {
   const steps: SetupStep[] = [
     {
       id: 1,
-      title: 'Supabase PostgreSQL Database Banao',
-      description: 'Supabase pe PostgreSQL project create karo',
+      title: 'PostgreSQL Database Banao',
+      description: 'Prisma ke liye PostgreSQL database create karo',
       details: [
-        'https://supabase.com pe jao aur free account banao',
-        '"New project" click karo',
+        'Vercel Postgres, Neon, Railway, Render, ya kisi bhi PostgreSQL provider par database banao',
         'Region select karo (nearest to your users)',
         'Database password safe rakhna',
+        'SSL enabled connection string use karo',
       ],
-      link: { text: 'Supabase pe jao ->', url: 'https://supabase.com' },
+      link: { text: 'Neon free database ->', url: 'https://neon.tech' },
       completed: false,
     },
     {
       id: 2,
       title: 'Connection String Copy Karo',
-      description: 'Supabase dashboard se DATABASE_URL copy karo',
+      description: 'Provider dashboard se DATABASE_URL copy karo',
       details: [
-        'Supabase dashboard me project open karo',
-        'Settings -> Database -> Connection string me jao',
-        'Direct connection URI copy karo',
-        'Format aisa hoga: postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres',
+        'Database provider dashboard me project open karo',
+        'Connection string / pooled connection string copy karo',
+        'Format aisa hoga: postgresql://user:password@host:5432/database?sslmode=require',
+        'Yahi value Vercel me DATABASE_URL ke naam se add hogi',
       ],
       completed: false,
     },
@@ -309,7 +309,7 @@ export function SetupGuide() {
               <Server className="w-3 h-3" /> PostgreSQL Required
             </span>
             <span className="flex items-center gap-1">
-              <Zap className="w-3 h-3" /> Supabase Free Tier Works
+              <Zap className="w-3 h-3" /> Prisma Ready
             </span>
             <span className="flex items-center gap-1">
               <Shield className="w-3 h-3" /> SSL Required

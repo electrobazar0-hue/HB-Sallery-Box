@@ -8,7 +8,7 @@ type GoogleInfoWindow = any;
 
 declare global {
   interface Window {
-    google: Record<string, any>;
+    google?: Record<string, any>;
   }
 }
 
@@ -150,7 +150,9 @@ function MapDisplay({
 
   // Update markers when employees change (Google Maps)
   useEffect(() => {
-    if (!useGoogleMaps || !googleMapRef.current || !window.google) return;
+    const googleMaps = window.google?.maps;
+
+    if (!useGoogleMaps || !googleMapRef.current || !googleMaps) return;
 
     // Clear existing markers
     markersRef.current.forEach(marker => marker.setMap(null));
@@ -159,12 +161,12 @@ function MapDisplay({
     // Add new markers
     employees.forEach((emp) => {
       if (emp.latitude && emp.longitude) {
-        const marker = new window.google.maps.Marker({
+        const marker = new googleMaps.Marker({
           position: { lat: emp.latitude, lng: emp.longitude },
           map: googleMapRef.current,
           title: emp.name,
           icon: {
-            path: window.google.maps.SymbolPath.CIRCLE,
+            path: googleMaps.SymbolPath.CIRCLE,
             scale: 10,
             fillColor: emp.status === 'online' ? '#10B981' : emp.status === 'working' ? '#3B82F6' : '#9CA3AF',
             fillOpacity: 1,

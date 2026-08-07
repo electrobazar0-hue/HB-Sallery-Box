@@ -82,10 +82,6 @@ export async function PUT(request: NextRequest) {
       data.gst !== undefined ||
       data.organizationLogo !== undefined
     )) {
-      if (data.organizationLogo !== undefined) {
-        await db.$queryRaw`ALTER TABLE IF EXISTS "Organization" ADD COLUMN IF NOT EXISTS "logo" TEXT`;
-      }
-
       await db.organization.update({
         where: { id: admin.organization.id },
         data: { 
