@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
           role: 'admin',
           organizationId: admin.organization?.id || null,
           organizationName: admin.organization?.name || null,
+          organizationLogo: admin.organization?.logo || null,
           profilePhoto: admin.profilePhoto,
         },
       });
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
           salary: employee.salary,
           organizationId: employee.organizationId,
           organizationName: employee.organization?.name || null,
+          organizationLogo: employee.organization?.logo || null,
           profilePhoto: employee.profilePhoto,
           geofenceEnabled: employee.geofenceEnabled,
           geofenceLat: employee.geofenceLat,

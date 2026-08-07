@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
         role: 'admin',
         organizationId: result.organization.id,
         organizationName: result.organization.name,
+        organizationLogo: result.organization.logo,
         profilePhoto: result.admin.profilePhoto,
       },
     });

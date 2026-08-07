@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
         address: admin.address,
         profilePhoto: admin.profilePhoto,
         organization: admin.organization,
+        organizationLogo: admin.organization?.logo || null,
       },
     });
   } catch (error) {
@@ -75,13 +76,23 @@ export async function PUT(request: NextRequest) {
     });
 
     // Also update organization if provided
-    if (data.organizationName && admin.organization?.id) {
+    if (admin.organization?.id && (
+      data.organizationName !== undefined ||
+      data.organizationAddress !== undefined ||
+      data.gst !== undefined ||
+      data.organizationLogo !== undefined
+    )) {
+      if (data.organizationLogo !== undefined) {
+        await db.$queryRaw`ALTER TABLE IF EXISTS "Organization" ADD COLUMN IF NOT EXISTS "logo" TEXT`;
+      }
+
       await db.organization.update({
         where: { id: admin.organization.id },
         data: { 
           name: data.organizationName,
           address: data.organizationAddress,
           gst: data.gst,
+          logo: data.organizationLogo,
         },
       });
     }

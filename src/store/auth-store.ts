@@ -100,7 +100,11 @@ export const useAuthStore = create<AuthState>()(
         }
       },
       partialize: (state) => ({
-        user: state.user,
+        user: state.user ? {
+          ...state.user,
+          profilePhoto: undefined,
+          organizationLogo: undefined,
+        } : null,
         isAuthenticated: state.isAuthenticated,
         savedCredentials: state.savedCredentials,
       }),

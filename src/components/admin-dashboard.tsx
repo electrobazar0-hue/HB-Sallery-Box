@@ -331,6 +331,34 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     return () => { mounted = false; };
   }, [isAdmin, user?.id, user?.organizationId]);
 
+  useEffect(() => {
+    if (!showAttendance || !user?.organizationId) return;
+
+    let mounted = true;
+    const fetchTodayAttendance = async () => {
+      try {
+        const today = getLocalDateKey();
+        const data = await fetchJSON(
+          `/api/attendance?organizationId=${user.organizationId}&date=${today}`,
+          { cache: 'no-store' },
+        );
+        if (mounted && data?.attendance) {
+          setAttendance(data.attendance);
+        }
+      } catch (error) {
+        console.error('Error refreshing attendance:', error);
+      }
+    };
+
+    fetchTodayAttendance();
+    const interval = window.setInterval(fetchTodayAttendance, 10000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, [showAttendance, user?.organizationId]);
+
   // Fetch employee events (birthdays/anniversaries) when employee list opens
   useEffect(() => {
     if (!showEmployeeList || !user?.organizationId) return;
@@ -602,14 +630,20 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
   // Handle profile photo update
   const handleProfilePhotoUpdate = async (photo: string) => {
+    updateUser({ profilePhoto: photo });
+
     if (user?.id) {
-      await fetchJSON('/api/admin', {
+      const result = await fetchJSON('/api/admin', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: user.id, profilePhoto: photo }),
       });
+
+      if (result?._httpError) {
+        console.error('Profile photo save failed:', result.error);
+      }
     }
-    updateUser({ profilePhoto: photo });
+
     addNotification({
       title: t.settings.changeProfilePhoto,
       body: t.messages.employeeUpdated,
@@ -618,8 +652,21 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   };
 
   // Handle organization logo update
-  const handleOrgLogoUpdate = (logo: string) => {
+  const handleOrgLogoUpdate = async (logo: string) => {
     updateOrganizationLogo(logo);
+
+    if (user?.id) {
+      const result = await fetchJSON('/api/admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: user.id, organizationLogo: logo }),
+      });
+
+      if (result?._httpError) {
+        console.error('Organization logo save failed:', result.error);
+      }
+    }
+
     addNotification({
       title: t.common.success,
       body: t.messages.employeeUpdated,
@@ -1451,9 +1498,13 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                     <p className="text-sm text-muted-foreground">{record.employee.designation}</p>
                   </div>
                   <div className="text-right">
-                    <div className="flex items-center gap-1">
-                      <Badge variant={record.punchIn ? 'default' : 'destructive'}>{record.punchIn || 'Not punched in'}</Badge>
-                      {record.punchOut && <Badge variant="secondary">{record.punchOut}</Badge>}
+                    <div className="flex flex-wrap items-center justify-end gap-1">
+                      <Badge variant={record.punchIn ? 'default' : 'destructive'}>
+                        {t.attendance.inLabel}: {record.punchIn || 'Not punched in'}
+                      </Badge>
+                      <Badge variant={record.punchOut ? 'secondary' : 'outline'}>
+                        {t.attendance.outLabel}: {record.punchOut || 'Pending'}
+                      </Badge>
                     </div>
                     {record.workHours > 0 && <p className="text-xs text-muted-foreground mt-1">{record.workHours}h worked</p>}
                   </div>

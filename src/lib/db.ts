@@ -54,7 +54,7 @@ const COLUMNS: Record<TableName, string[]> = {
   Holiday: ['id', 'organizationId', 'holidayName', 'date', 'holidayType', 'description', 'allowPunch', 'isHalfDay', 'isPaid', 'isOptional', 'compensatoryOff', 'isRecurring', 'recurringDay', 'status', 'syncSource', 'createdBy', 'createdAt', 'updatedAt'],
   IncentiveCategory: ['id', 'name', 'description', 'amount', 'organizationId', 'active', 'createdAt', 'updatedAt'],
   Leave: ['id', 'employeeId', 'type', 'startDate', 'endDate', 'reason', 'status', 'attendanceAllow', 'approvedBy', 'approvedAt', 'createdAt', 'updatedAt'],
-  Organization: ['id', 'name', 'address', 'gst', 'adminId', 'createdAt', 'updatedAt'],
+  Organization: ['id', 'name', 'address', 'gst', 'logo', 'adminId', 'createdAt', 'updatedAt'],
   PayrollAdjustment: ['id', 'employeeId', 'month', 'baseSalary', 'bonus', 'deductions', 'advance', 'advanceRecovery', 'netSalary', 'notes', 'status', 'paidAt', 'createdBy', 'createdAt', 'updatedAt'],
   SalaryRecord: ['id', 'employeeId', 'month', 'baseSalary', 'overtime', 'incentives', 'deductions', 'netSalary', 'status', 'paidAt', 'createdAt', 'updatedAt'],
   Shift: ['id', 'name', 'startTime', 'endTime', 'graceMinutes', 'organizationId', 'createdAt', 'updatedAt'],
@@ -111,10 +111,12 @@ CREATE TABLE IF NOT EXISTS "Organization" (
   "name" TEXT NOT NULL,
   "address" TEXT NOT NULL,
   "gst" TEXT,
+  "logo" TEXT,
   "adminId" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE IF EXISTS "Organization" ADD COLUMN IF NOT EXISTS "logo" TEXT;
 CREATE TABLE IF NOT EXISTS "Employee" (
   "id" TEXT PRIMARY KEY,
   "userId" TEXT NOT NULL,

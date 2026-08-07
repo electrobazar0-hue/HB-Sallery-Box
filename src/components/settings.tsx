@@ -93,8 +93,23 @@ export function Settings({ onBack, onLogout }: SettingsProps) {
     setShowPhotoPicker(false);
   };
 
-  const handleOrganizationLogoUpdate = (logo: string) => {
+  const handleOrganizationLogoUpdate = async (logo: string) => {
     updateOrganizationLogo(logo);
+
+    if (user?.role === 'admin' && user.id) {
+      const data = await fetchJSON('/api/admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.id,
+          organizationLogo: logo,
+        }),
+      });
+
+      if (data?._httpError) {
+        console.error('Error saving organization logo:', data.error);
+      }
+    }
   };
 
   const themes = [

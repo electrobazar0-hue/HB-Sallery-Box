@@ -19,7 +19,7 @@ type Screen = 'splash' | 'setup' | 'login' | 'register' | 'dashboard' | 'setting
 export default function Home() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
   const [registrationPhone, setRegistrationPhone] = useState('');
-  const { logout, user } = useAuthStore();
+  const { logout, user, updateUser } = useAuthStore();
   
   const {
     isEnabled: biometricEnabled,
@@ -30,9 +30,107 @@ export default function Home() {
     unlock: biometricUnlock,
   } = useBiometric();
 
+  const refreshCurrentUser = useCallback(async () => {
+    if (!user?.id) return true;
+
+    try {
+      if (user.role === 'admin') {
+        const data = await fetchJSON<{
+          exists?: boolean;
+          admin?: {
+            id: string;
+            userId?: string;
+            name: string;
+            phone: string;
+            email?: string;
+            profilePhoto?: string;
+            organizationLogo?: string;
+            organization?: { id: string; name: string; logo?: string };
+          };
+        }>(`/api/admin?id=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
+
+        if (data?.admin) {
+          updateUser({
+            id: data.admin.id,
+            userId: data.admin.userId,
+            name: data.admin.name,
+            phone: data.admin.phone,
+            email: data.admin.email,
+            profilePhoto: data.admin.profilePhoto,
+            organizationId: data.admin.organization?.id,
+            organizationName: data.admin.organization?.name,
+            organizationLogo: data.admin.organizationLogo || data.admin.organization?.logo,
+          });
+          return true;
+        }
+
+        return data?.exists === false ? false : true;
+      }
+
+      const data = await fetchJSON<{
+        employee?: {
+          id: string;
+          userId?: string;
+          name: string;
+          phone: string;
+          email?: string;
+          designation?: string;
+          department?: string;
+          salary?: number;
+          profilePhoto?: string;
+          active?: boolean;
+          organizationId?: string;
+          organizationName?: string;
+          organizationLogo?: string;
+          organization?: { id: string; name: string; logo?: string };
+          geofenceEnabled?: boolean;
+          geofenceLat?: number;
+          geofenceLng?: number;
+          geofenceRadius?: number;
+        };
+        _httpError?: boolean;
+      }>(`/api/employees?employeeId=${encodeURIComponent(user.id)}`, { cache: 'no-store' });
+
+      if (data?.employee) {
+        const employee = data.employee;
+        updateUser({
+          id: employee.id,
+          userId: employee.userId,
+          name: employee.name,
+          phone: employee.phone,
+          email: employee.email,
+          designation: employee.designation,
+          department: employee.department,
+          salary: employee.salary,
+          profilePhoto: employee.profilePhoto,
+          active: employee.active,
+          organizationId: employee.organizationId || employee.organization?.id,
+          organizationName: employee.organizationName || employee.organization?.name,
+          organizationLogo: employee.organizationLogo || employee.organization?.logo,
+          geofenceEnabled: employee.geofenceEnabled,
+          geofenceLat: employee.geofenceLat,
+          geofenceLng: employee.geofenceLng,
+          geofenceRadius: employee.geofenceRadius,
+        });
+        return true;
+      }
+
+      return data?._httpError ? false : true;
+    } catch (error) {
+      console.error('Failed to refresh current user:', error);
+      return true;
+    }
+  }, [user?.id, user?.role, updateUser]);
+
   const handleSplashComplete = useCallback(async (isAuthenticated: boolean) => {
     if (isAuthenticated) {
-      setCurrentScreen('dashboard');
+      const isCurrentUserValid = await refreshCurrentUser();
+      if (isCurrentUserValid) {
+        setCurrentScreen('dashboard');
+      } else {
+        logout();
+        setCurrentScreen('login');
+      }
       return;
     }
 
@@ -58,7 +156,7 @@ export default function Home() {
       // (the setup guide is only needed for PostgreSQL on Vercel)
       setCurrentScreen('login');
     }
-  }, []);
+  }, [logout, refreshCurrentUser]);
 
   const handleLogin = useCallback(() => {
     setCurrentScreen('dashboard');

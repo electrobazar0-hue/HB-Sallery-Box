@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
           overtimeRate: employee.overtimeRate,
           organizationId: employee.organizationId,
           organizationName: employee.organization?.name || null,
+          organizationLogo: employee.organization?.logo || null,
           profilePhoto: employee.profilePhoto,
           active: employee.active,
           shifts: employee.shifts,
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
           salary: employee.salary,
           organizationId: employee.organizationId,
           organizationName: employee.organization?.name || null,
+          organizationLogo: employee.organization?.logo || null,
           profilePhoto: employee.profilePhoto,
           active: employee.active,
         },
@@ -93,6 +95,7 @@ export async function GET(request: NextRequest) {
       const employee = await db.employee.findUnique({
         where: { id: employeeId },
         include: {
+          organization: true,
           shifts: {
             include: { shift: true },
           },

@@ -1286,13 +1286,21 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
             </Button>
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
-                <img 
-                  src="/logo.jpg" 
-                  alt="HB Sallery Box Logo" 
-                  className="w-full h-full object-cover"
-                />
+                {user?.organizationLogo ? (
+                  <img
+                    src={user.organizationLogo}
+                    alt={user.organizationName || 'Organization'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <img
+                    src="/logo.jpg"
+                    alt="HB Sallery Box Logo"
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </div>
-              <span className="font-bold text-lg hidden sm:inline">HB Sallery Box</span>
+              <span className="font-bold text-lg hidden sm:inline">{user?.organizationName || 'HB Sallery Box'}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1328,11 +1336,19 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
               <div className="p-4 border-b flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg overflow-hidden bg-white">
-                    <img 
-                      src="/logo.jpg" 
-                      alt="HB Sallery Box Logo" 
-                      className="w-full h-full object-cover"
-                    />
+                    {user?.organizationLogo ? (
+                      <img
+                        src={user.organizationLogo}
+                        alt={user.organizationName || 'Organization'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <img
+                        src="/logo.jpg"
+                        alt="HB Sallery Box Logo"
+                        className="w-full h-full object-cover"
+                      />
+                    )}
                   </div>
                   <span className="font-bold">{t.dashboard.employeePanel}</span>
                 </div>

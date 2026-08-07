@@ -261,6 +261,7 @@ export function AdminRegistration({ onBack, onRegistered, initialPhone }: AdminR
         role: 'admin',
         organizationId: data.user.organizationId,
         organizationName: data.user.organizationName,
+        organizationLogo: data.user.organizationLogo,
         email: data.user.email,
         profilePhoto: data.user.profilePhoto,
       });

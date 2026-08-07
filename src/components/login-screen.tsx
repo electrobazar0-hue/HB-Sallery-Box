@@ -109,6 +109,7 @@ export function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
         role: data.user.role,
         organizationId: data.user.organizationId,
         organizationName: data.user.organizationName,
+        organizationLogo: data.user.organizationLogo,
         email: data.user.email,
         designation: data.user.designation,
         department: data.user.department,
