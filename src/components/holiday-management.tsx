@@ -101,11 +101,12 @@ const weekDays = [
   { value: 2, label: 'Tuesday' },
   { value: 3, label: 'Wednesday' },
   { value: 4, label: 'Thursday' },
+
   { value: 5, label: 'Friday' },
   { value: 6, label: 'Saturday' },
 ];
 
-const syncYears = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
+const syncYears = [2024, 2025, 2026, 2027];
 
 const emptyFormData = {
   holidayName: '',
@@ -119,34 +120,32 @@ const emptyFormData = {
   compensatoryOff: false,
   isRecurring: false,
   recurringDay: 0,
-  status: 'active',
+  status: 'draft',
 };
 
 // Extended translation keys (fallbacks if not in i18n store)
 const fallbackT = {
-  syncHolidays: 'Sync Indian Holidays',
-  syncPreviewLoading: 'Fetching Indian Holidays...',
-  syncPreviewCount: (count: number, source: string) => `${count} Indian holidays found (${source})`,
-  syncNewDrafts: (count: number, source: string) => `${count} Indian holidays synced (${source})`,
+  syncHolidays: 'Sync Holidays',
+  syncPreviewLoading: 'Checking holidays...',
+  syncPreviewCount: (count: number, source: string) => `${count} holidays found via ${source}`,
+  syncNewDrafts: (count: number, source: string) => `${count} new holidays added as draft (Source: ${source})`,
   googleConnected: 'Google Calendar: Connected',
-  googleNotConnected: 'National Live Calendar Engine: Active',
+  googleNotConnected: 'Google Calendar: Not connected (using India Post live source)',
   publishAll: 'Publish All',
   deleteDrafts: 'Delete Drafts',
   draftBanner: (count: number) => `${count} holiday${count === 1 ? '' : 's'} in draft`,
   published: 'Published',
   all: 'All',
-  sourceCalendarBharat: 'National Calendar (Live)',
   sourceIndiaPost: 'India Post',
   sourceOfficeHolidays: 'Office Holidays',
   sourceGoogle: 'Google',
   sourceStatic: 'Static',
   year: 'Year',
-  previewSync: 'Live auto-sync of official gazetted, festival & bank holidays',
+  previewSync: 'Preview sync before importing',
 };
 
 function getSyncSourceLabel(source?: string | null): string | null {
   if (!source) return null;
-  if (source === 'calendar-bharat') return 'National Calendar (Live)';
   if (source === 'india-post') return 'India Post / IPPB';
   if (source === 'office-holidays-ics') return 'Office Holidays';
   if (source === 'google-calendar') return 'Google Calendar';
@@ -155,7 +154,6 @@ function getSyncSourceLabel(source?: string | null): string | null {
 }
 
 function getSourceDisplayName(source: string): string {
-  if (source === 'calendar-bharat') return 'National Indian Calendar (Official Live)';
   if (source === 'india-post') return 'India Post & IPPB Live Portal';
   if (source === 'office-holidays-ics') return 'Office Holidays iCal';
   if (source === 'google-calendar') return 'Google Calendar (India)';
@@ -180,7 +178,6 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
   // New states for sync, filter, bulk actions
   const [syncYear, setSyncYear] = useState(new Date().getFullYear());
-  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
   const [syncPreviewLoading, setSyncPreviewLoading] = useState(false);
   const [hasGoogleKey, setHasGoogleKey] = useState(false);
@@ -188,7 +185,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const [isBulkAction, setIsBulkAction] = useState(false);
 
   // Fetch holidays
-  const fetchHolidays = async (statusFilter?: string, yearFilter?: string) => {
+  const fetchHolidays = async (statusFilter?: string) => {
     if (!organizationId) {
       setError(t.holiday.organizationNotFound);
       setIsLoading(false);
@@ -198,8 +195,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     try {
       setError(null);
       const filterParam = statusFilter || activeFilter;
-      const yr = yearFilter !== undefined ? yearFilter : selectedYear;
-      const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}${yr !== 'all' ? `&year=${yr}` : ''}`;
+      const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}`;
       const data = await fetchJSON(url);
 
       if (data?.success) {
@@ -220,12 +216,12 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     fetchHolidays();
   }, [organizationId]);
 
-  // Re-fetch when filter or year changes
+  // Re-fetch when filter changes
   useEffect(() => {
     if (organizationId) {
-      fetchHolidays(activeFilter, selectedYear);
+      fetchHolidays(activeFilter);
     }
-  }, [activeFilter, selectedYear, organizationId]);
+  }, [activeFilter, organizationId]);
 
   // Preview sync (GET)
   const handleSyncPreview = async () => {
@@ -269,14 +265,10 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
       if (data?.success) {
         const sourceName = data.sourceLabel || getSourceDisplayName(data.source);
-        const msg = data.message || `All ${data.total || data.added || 14} Indian holidays for year ${syncYear} synced as drafts! (${sourceName})`;
-        setSuccess(msg);
+        setSuccess(fallbackT.syncNewDrafts(data.added || 0, sourceName));
         setSyncPreview(null);
-        setSelectedYear(syncYear.toString());
-        setCurrentMonth(new Date(syncYear, 0, 1));
         setHasGoogleKey(data.source === 'google-calendar');
-        setActiveFilter('draft');
-        fetchHolidays('draft', syncYear.toString());
+        fetchHolidays(activeFilter);
       } else {
         setError(data?.error || 'Failed to sync holidays');
       }
@@ -299,20 +291,15 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
       const data = await fetchJSON('/api/holidays', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId, action, year: selectedYear }),
+        body: JSON.stringify({ organizationId, action, year: syncYear }),
       });
 
       if (data?.success) {
         const actionLabel = action === 'publish-all'
-          ? `All ${data.count} holidays published successfully!`
+          ? `${data.count} holidays published`
           : `${data.count} draft holidays deleted`;
         setSuccess(actionLabel);
-        if (action === 'publish-all') {
-          setActiveFilter('active');
-          fetchHolidays('active', selectedYear);
-        } else {
-          fetchHolidays(activeFilter, selectedYear);
-        }
+        fetchHolidays(activeFilter);
       } else {
         setError(data?.error || 'Bulk action failed');
       }
@@ -514,7 +501,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const getUpcomingHolidays = () => {
     const today = new Date().toISOString().split('T')[0];
     return holidays
-      .filter(h => h.date >= today)
+      .filter(h => h.date >= today && h.status === 'active')
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 5);
   };
@@ -529,9 +516,9 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
   // Filter tabs data
   const filterTabs = [
-    { key: 'all' as const, label: (t.holiday as Record<string, string>).all || fallbackT.all, count: stats?.totalHolidays ?? holidays.length },
-    { key: 'active' as const, label: fallbackT.published, count: stats?.activeHolidays ?? 0 },
-    { key: 'draft' as const, label: t.holiday.draft, count: stats?.draftHolidays ?? 0 },
+    { key: 'all' as const, label: (t.holiday as Record<string, string>).all || fallbackT.all, count: holidays.length },
+    { key: 'active' as const, label: fallbackT.published, count: stats?.activeHolidays || 0 },
+    { key: 'draft' as const, label: t.holiday.draft, count: stats?.draftHolidays || 0 },
   ];
 
   return (
@@ -595,7 +582,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
             <div className="flex items-center gap-2">
               {/* Year Selector */}
               <Select value={syncYear.toString()} onValueChange={(val) => { setSyncYear(parseInt(val)); setSyncPreview(null); }}>
-                <SelectTrigger className="w-[110px] h-9 text-sm">
+                <SelectTrigger className="w-[90px] h-9 text-sm">
                   <CalendarDays className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
                   <SelectValue />
                 </SelectTrigger>
@@ -698,47 +685,21 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
         </div>
       )}
 
-      {/* Filter Tabs & Year Selector */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1 flex-1">
-          {filterTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveFilter(tab.key)}
-              className={`flex-1 py-1.5 px-3 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                activeFilter === tab.key
-                  ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab.label} <span className="text-[10px] ml-1 opacity-70">({tab.count})</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">Year View:</Label>
-          <Select
-            value={selectedYear}
-            onValueChange={(val) => {
-              setSelectedYear(val);
-              if (val !== 'all') {
-                setCurrentMonth(new Date(parseInt(val), currentMonth.getMonth(), 1));
-              }
-            }}
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+        {filterTabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveFilter(tab.key)}
+            className={`flex-1 py-1.5 px-3 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+              activeFilter === tab.key
+                ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
-            <SelectTrigger className="w-[115px] h-8 text-xs">
-              <CalendarDays className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Years</SelectItem>
-              {syncYears.map((y) => (
-                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            {tab.label} <span className="text-[10px] ml-1 opacity-70">({tab.count})</span>
+          </button>
+        ))}
       </div>
 
       {/* Bulk Actions Bar — shown when drafts exist and filter is all or draft */}
@@ -928,9 +889,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
           {/* All Holidays List */}
           <Card className="border-0 shadow-md">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base sm:text-lg">
-                {activeFilter === 'draft' ? `${t.holiday.draft} (${holidays.length})` : activeFilter === 'active' ? `${fallbackT.published} (${holidays.length})` : `${t.holiday.allHolidays} (${holidays.length})`}
-              </CardTitle>
+              <CardTitle className="text-base sm:text-lg">{t.holiday.allHolidays} ({holidays.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[300px] sm:h-[350px]">
@@ -1180,25 +1139,28 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
             <Separator />
 
-            {/* Status - only show when editing */}
-            {editingHoliday && (
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                  <Send className="h-3 w-3" /> {t.holiday.showToEmployees}
-                </h4>
-                <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
-                  <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">
-                      <span className="flex items-center gap-2"><Eye className="h-3.5 w-3.5 text-emerald-500" />{t.holiday.publishedEmployees}</span>
-                    </SelectItem>
-                    <SelectItem value="draft">
-                      <span className="flex items-center gap-2"><EyeOff className="h-3.5 w-3.5 text-amber-500" />{t.holiday.draftHidden}</span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {/* Status (Draft vs Published) */}
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Send className="h-3 w-3" /> {t.holiday.showToEmployees}
+              </h4>
+              <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
+                <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">
+                    <span className="flex items-center gap-2"><EyeOff className="h-3.5 w-3.5 text-amber-500" />{t.holiday.draftHidden}</span>
+                  </SelectItem>
+                  <SelectItem value="active">
+                    <span className="flex items-center gap-2"><Eye className="h-3.5 w-3.5 text-emerald-500" />{t.holiday.publishedEmployees}</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {formData.status === 'draft' 
+                  ? '🔒 ' + (t.holiday.draftNote || 'This holiday will be saved as Draft. Admin can publish it later.')
+                  : '👁️ ' + t.holiday.publishedEmployees}
+              </p>
+            </div>
 
             <div className="flex gap-2 pt-2 sm:pt-4">
               <Button variant="outline" className="flex-1 text-sm h-10 sm:h-11"

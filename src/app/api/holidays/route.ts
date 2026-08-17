@@ -4,44 +4,37 @@ import { db } from '@/lib/db';
 // GET - Holidays with status filter (employees only see published/active)
 export async function GET(request: NextRequest) {
   try {
-    const rawOrgId = request.nextUrl.searchParams.get('organizationId');
+    const organizationId = request.nextUrl.searchParams.get('organizationId');
     const year = request.nextUrl.searchParams.get('year');
     const status = request.nextUrl.searchParams.get('status');
 
-    let organizationId = rawOrgId;
     if (!organizationId) {
-      const anyOrg = await db.organization.findFirst();
-      if (anyOrg) {
-        organizationId = anyOrg.id;
-      } else {
-        return NextResponse.json({ success: false, error: 'Organization ID is required' }, { status: 400 });
-      }
+      return NextResponse.json({ success: false, error: 'Organization ID is required' }, { status: 400 });
     }
 
-    const baseWhere: Record<string, unknown> = { organizationId };
+    const where: Record<string, unknown> = { organizationId };
 
-    if (year && year !== 'all') {
-      baseWhere.date = { startsWith: year };
+    if (year) {
+      where.date = { startsWith: year };
     }
 
-    // Always fetch all holidays for this organization & year to calculate accurate global stats
-    const allHolidays = await db.holiday.findMany({
-      where: baseWhere,
+    // If no status specified or status=all, return all. Otherwise filter.
+    if (status && status !== 'all') {
+      where.status = status;
+    }
+
+    const holidays = await db.holiday.findMany({
+      where,
       orderBy: { date: 'asc' },
     });
 
-    const totalHolidays = allHolidays.length;
-    const activeHolidays = allHolidays.filter(h => h.status === 'active').length;
-    const draftHolidays = allHolidays.filter(h => h.status === 'draft').length;
-    const paidHolidays = allHolidays.filter(h => h.isPaid).length;
-    const halfDayHolidays = allHolidays.filter(h => h.isHalfDay).length;
-    const optionalHolidays = allHolidays.filter(h => h.isOptional).length;
-    const compOffHolidays = allHolidays.filter(h => h.compensatoryOff).length;
-
-    // Filter the returned list only if a specific status filter (active or draft) is requested
-    const holidays = (status && status !== 'all')
-      ? allHolidays.filter(h => h.status === status)
-      : allHolidays;
+    const totalHolidays = holidays.length;
+    const activeHolidays = holidays.filter(h => h.status === 'active').length;
+    const draftHolidays = holidays.filter(h => h.status === 'draft').length;
+    const paidHolidays = holidays.filter(h => h.isPaid).length;
+    const halfDayHolidays = holidays.filter(h => h.isHalfDay).length;
+    const optionalHolidays = holidays.filter(h => h.isOptional).length;
+    const compOffHolidays = holidays.filter(h => h.compensatoryOff).length;
 
     return NextResponse.json({
       success: true,
@@ -67,19 +60,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      organizationId: rawOrgId, holidayName, date, holidayType, description,
+      organizationId, holidayName, date, holidayType, description,
       allowPunch, isHalfDay, isPaid, isOptional, compensatoryOff,
       isRecurring, recurringDay, status, createdBy,
     } = body;
-
-    let organizationId = rawOrgId;
-    if (organizationId) {
-      const orgExists = await db.organization.findUnique({ where: { id: organizationId } });
-      if (!orgExists) {
-        const anyOrg = await db.organization.findFirst();
-        if (anyOrg) organizationId = anyOrg.id;
-      }
-    }
 
     if (!organizationId || !holidayName || !date || !createdBy) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -105,7 +89,7 @@ export async function POST(request: NextRequest) {
         compensatoryOff: compensatoryOff || false,
         isRecurring: isRecurring || false,
         recurringDay: recurringDay || null,
-        status: status || 'active',
+        status: status || 'draft',
         createdBy,
       },
     });
@@ -173,16 +157,7 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { organizationId: rawOrgId, action, holidayIds, year } = body;
-
-    let organizationId = rawOrgId;
-    if (organizationId) {
-      const orgExists = await db.organization.findUnique({ where: { id: organizationId } });
-      if (!orgExists) {
-        const anyOrg = await db.organization.findFirst();
-        if (anyOrg) organizationId = anyOrg.id;
-      }
-    }
+    const { organizationId, action, holidayIds, year } = body;
 
     if (!organizationId || !action) {
       return NextResponse.json({ success: false, error: 'Organization ID and action required' }, { status: 400 });
@@ -190,24 +165,16 @@ export async function PATCH(request: NextRequest) {
 
     let count = 0;
 
-    if (action === 'publish-all') {
-      // Publish all draft holidays
-      const whereClause: Record<string, unknown> = { organizationId, status: 'draft' };
-      if (year && year !== 'all') {
-        whereClause.date = { startsWith: String(year) };
-      }
+    if (action === 'publish-all' && year) {
+      // Publish all draft holidays for a year
       count = await db.holiday.updateMany({
-        where: whereClause,
+        where: { organizationId, date: { startsWith: String(year) }, status: 'draft' },
         data: { status: 'active' },
       }).then(r => r.count);
-    } else if (action === 'draft-all') {
-      // Unpublish all active holidays
-      const whereClause: Record<string, unknown> = { organizationId, status: 'active' };
-      if (year && year !== 'all') {
-        whereClause.date = { startsWith: String(year) };
-      }
+    } else if (action === 'draft-all' && year) {
+      // Unpublish all active holidays for a year
       count = await db.holiday.updateMany({
-        where: whereClause,
+        where: { organizationId, date: { startsWith: String(year) }, status: 'active' },
         data: { status: 'draft' },
       }).then(r => r.count);
     } else if (action === 'publish' && Array.isArray(holidayIds)) {
@@ -222,14 +189,10 @@ export async function PATCH(request: NextRequest) {
         where: { id: { in: holidayIds } },
         data: { status: 'draft' },
       }).then(r => r.count);
-    } else if (action === 'delete-drafts') {
-      // Delete all draft holidays
-      const whereClause: Record<string, unknown> = { organizationId, status: 'draft' };
-      if (year && year !== 'all') {
-        whereClause.date = { startsWith: String(year) };
-      }
+    } else if (action === 'delete-drafts' && year) {
+      // Delete all draft holidays for a year
       count = await db.holiday.deleteMany({
-        where: whereClause,
+        where: { organizationId, date: { startsWith: String(year) }, status: 'draft' },
       }).then(r => r.count);
     }
 

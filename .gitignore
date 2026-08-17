@@ -81,11 +81,5 @@ db/*.db
 db/*.db-journal
 prisma/*.db
 prisma/*.db-journal
-*.db
-*.db-journal
-
-# scratch and archives
-scratch/
 *.zip
-staging_deploy/
-
+scratch/

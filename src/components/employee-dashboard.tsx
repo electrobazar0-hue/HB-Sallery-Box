@@ -427,6 +427,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     return () => { mounted = false; };
   }, [user?.id]);
 
+
   // Fetch leave records
   useEffect(() => {
     if (!user?.id) return;
@@ -513,6 +514,30 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
     return () => { mounted = false; };
   }, [user?.id]);
+
+  // Fetch published holidays for employee (only active/published)
+  useEffect(() => {
+    if (!user?.organizationId) return;
+
+    let mounted = true;
+
+    const fetchPublishedHolidays = async () => {
+      try {
+        const data = await fetchJSON<{ success?: boolean; holidays?: HolidayRecord[] }>(
+          `/api/holidays?organizationId=${user.organizationId}&status=active`
+        );
+        if (mounted && data?.success && data?.holidays) {
+          setPublishedHolidays(data.holidays);
+        }
+      } catch (error) {
+        console.error('Error fetching published holidays:', error);
+      }
+    };
+
+    fetchPublishedHolidays();
+
+    return () => { mounted = false; };
+  }, [user?.organizationId]);
 
   // Fetch announcements and show popup for new ones
   useEffect(() => {
