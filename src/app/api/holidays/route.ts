@@ -12,29 +12,30 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Organization ID is required' }, { status: 400 });
     }
 
-    const where: Record<string, unknown> = { organizationId };
+    const baseWhere: Record<string, unknown> = { organizationId };
 
-    if (year) {
-      where.date = { startsWith: year };
+    if (year && year !== 'all') {
+      baseWhere.date = { startsWith: year };
     }
 
-    // If no status specified or status=all, return all. Otherwise filter.
-    if (status && status !== 'all') {
-      where.status = status;
-    }
-
-    const holidays = await db.holiday.findMany({
-      where,
+    // Always fetch all holidays for this organization & year to calculate accurate global stats
+    const allHolidays = await db.holiday.findMany({
+      where: baseWhere,
       orderBy: { date: 'asc' },
     });
 
-    const totalHolidays = holidays.length;
-    const activeHolidays = holidays.filter(h => h.status === 'active').length;
-    const draftHolidays = holidays.filter(h => h.status === 'draft').length;
-    const paidHolidays = holidays.filter(h => h.isPaid).length;
-    const halfDayHolidays = holidays.filter(h => h.isHalfDay).length;
-    const optionalHolidays = holidays.filter(h => h.isOptional).length;
-    const compOffHolidays = holidays.filter(h => h.compensatoryOff).length;
+    const totalHolidays = allHolidays.length;
+    const activeHolidays = allHolidays.filter(h => h.status === 'active').length;
+    const draftHolidays = allHolidays.filter(h => h.status === 'draft').length;
+    const paidHolidays = allHolidays.filter(h => h.isPaid).length;
+    const halfDayHolidays = allHolidays.filter(h => h.isHalfDay).length;
+    const optionalHolidays = allHolidays.filter(h => h.isOptional).length;
+    const compOffHolidays = allHolidays.filter(h => h.compensatoryOff).length;
+
+    // Filter the returned list only if a specific status filter (active or draft) is requested
+    const holidays = (status && status !== 'all')
+      ? allHolidays.filter(h => h.status === status)
+      : allHolidays;
 
     return NextResponse.json({
       success: true,

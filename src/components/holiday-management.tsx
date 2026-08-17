@@ -508,7 +508,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const getUpcomingHolidays = () => {
     const today = new Date().toISOString().split('T')[0];
     return holidays
-      .filter(h => h.date >= today && h.status === 'active')
+      .filter(h => h.date >= today)
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(0, 5);
   };
@@ -523,9 +523,9 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
   // Filter tabs data
   const filterTabs = [
-    { key: 'all' as const, label: (t.holiday as Record<string, string>).all || fallbackT.all, count: holidays.length },
-    { key: 'active' as const, label: fallbackT.published, count: stats?.activeHolidays || 0 },
-    { key: 'draft' as const, label: t.holiday.draft, count: stats?.draftHolidays || 0 },
+    { key: 'all' as const, label: (t.holiday as Record<string, string>).all || fallbackT.all, count: stats?.totalHolidays ?? holidays.length },
+    { key: 'active' as const, label: fallbackT.published, count: stats?.activeHolidays ?? 0 },
+    { key: 'draft' as const, label: t.holiday.draft, count: stats?.draftHolidays ?? 0 },
   ];
 
   return (
