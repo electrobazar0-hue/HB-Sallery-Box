@@ -1,30 +1,24 @@
-const { createServer } = require('http');
-const { parse } = require('url');
+const path = require('path');
+const http = require('http');
 const next = require('next');
 
-const dev = false;
-const hostname = '0.0.0.0';
+const dev = process.env.NODE_ENV !== 'production';
 const port = parseInt(process.env.PORT || '10000', 10);
+const hostname = '0.0.0.0';
 
-const app = next({ dev, hostname, port });
+const app = next({ dev, dir: path.resolve(__dirname), hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
-  createServer(async (req, res) => {
-    try {
-      const parsedUrl = parse(req.url, true);
-      await handle(req, res, parsedUrl);
-    } catch (err) {
-      console.error('Error occurred handling', req.url, err);
-      res.statusCode = 500;
-      res.end('Internal Server Error');
-    }
-  })
-  .once('error', (err) => {
-    console.error('Server error:', err);
-    process.exit(1);
-  })
-  .listen(port, '0.0.0.0', () => {
-    console.log(`> HB Sallery Box Server listening on http://0.0.0.0:${port}`);
+  const server = http.createServer((req, res) => {
+    handle(req, res);
   });
+
+  server.listen(port, hostname, (err) => {
+    if (err) throw err;
+    console.log(`> Ready on http://${hostname}:${port}`);
+  });
+}).catch((ex) => {
+  console.error(ex.stack);
+  process.exit(1);
 });
