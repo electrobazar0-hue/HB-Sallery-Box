@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Update holiday (including publish/draft toggle)
+// PUT - Update holiday (supports full edit or partial status toggle)
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
@@ -111,23 +111,23 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Holiday ID is required' }, { status: 400 });
     }
 
+    const updateData: Record<string, unknown> = {};
+    if (data.holidayName !== undefined) updateData.holidayName = data.holidayName;
+    if (data.date !== undefined) updateData.date = data.date;
+    if (data.holidayType !== undefined) updateData.holidayType = data.holidayType;
+    if (data.description !== undefined) updateData.description = data.description || null;
+    if (data.allowPunch !== undefined) updateData.allowPunch = Boolean(data.allowPunch);
+    if (data.isHalfDay !== undefined) updateData.isHalfDay = Boolean(data.isHalfDay);
+    if (data.isPaid !== undefined) updateData.isPaid = Boolean(data.isPaid);
+    if (data.isOptional !== undefined) updateData.isOptional = Boolean(data.isOptional);
+    if (data.compensatoryOff !== undefined) updateData.compensatoryOff = Boolean(data.compensatoryOff);
+    if (data.isRecurring !== undefined) updateData.isRecurring = Boolean(data.isRecurring);
+    if (data.recurringDay !== undefined) updateData.recurringDay = data.recurringDay !== null ? Number(data.recurringDay) : null;
+    if (data.status !== undefined) updateData.status = data.status;
+
     const holiday = await db.holiday.update({
       where: { id },
-      data: {
-        holidayName: data.holidayName,
-        date: data.date,
-        holidayType: data.holidayType,
-        description: data.description || null,
-        allowPunch: data.allowPunch,
-        isHalfDay: data.isHalfDay,
-        isPaid: data.isPaid,
-        isOptional: data.isOptional,
-        compensatoryOff: data.compensatoryOff,
-        isRecurring: data.isRecurring,
-        recurringDay: data.recurringDay || null,
-        status: data.status,
-        syncSource: data.syncSource,
-      },
+      data: updateData,
     });
 
     return NextResponse.json({ success: true, holiday });
@@ -137,10 +137,19 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - Delete holiday
+// DELETE - Delete holiday (supports ?id=... and JSON body)
 export async function DELETE(request: NextRequest) {
   try {
-    const id = request.nextUrl.searchParams.get('id');
+    let id = request.nextUrl.searchParams.get('id');
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body?.id;
+      } catch {
+        // No body
+      }
+    }
+
     if (!id) {
       return NextResponse.json({ success: false, error: 'Holiday ID is required' }, { status: 400 });
     }

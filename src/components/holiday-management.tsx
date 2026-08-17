@@ -120,7 +120,7 @@ const fallbackT = {
   publishAll: 'Publish All',
   deleteDrafts: 'Delete Drafts',
   draftBanner: (count: number) => `${count} holiday${count === 1 ? '' : 's'} in draft (Hidden from employees)`,
-  published: 'Published',
+  published: 'Active (Visible)',
   all: 'All',
   status: 'Status',
   draftDescription: 'Drafts are hidden from employee app until published',
@@ -159,7 +159,6 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     }
 
     try {
-      setError(null);
       const filterParam = statusFilter || activeFilter;
       const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}`;
       const data = await fetchJSON(url);
@@ -231,41 +230,61 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
       setError(null);
       if (editingHoliday) {
         // Update
+        const payload = {
+          id: editingHoliday.id,
+          holidayName: formData.holidayName,
+          date: formData.date,
+          holidayType: formData.holidayType,
+          description: formData.description,
+          allowPunch: formData.allowPunch,
+          isHalfDay: formData.isHalfDay,
+          isPaid: formData.isPaid,
+          isOptional: formData.isOptional,
+          compensatoryOff: formData.compensatoryOff,
+          isRecurring: formData.isRecurring,
+          recurringDay: formData.recurringDay,
+          status: formData.status,
+        };
+
+        // Optimistic UI update
+        setHolidays(prev => prev.map(h => h.id === editingHoliday.id ? { ...h, ...payload } : h));
+        setShowAddDialog(false);
+        setEditingHoliday(null);
+        setFormData({ ...emptyFormData });
+
         const data = await fetchJSON('/api/holidays', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: editingHoliday.id,
-            ...formData,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (data?.success) {
           setSuccess(t.holiday.holidayUpdated);
-          setShowAddDialog(false);
-          setEditingHoliday(null);
-          setFormData({ ...emptyFormData });
           fetchHolidays(activeFilter);
         } else {
           setError(data?.error || t.holiday.failedUpdateHoliday);
+          fetchHolidays(activeFilter);
         }
       } else {
         // Create (defaults to draft)
+        const payload = {
+          organizationId,
+          createdBy: adminId,
+          ...formData,
+        };
+
         const data = await fetchJSON('/api/holidays', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            organizationId,
-            createdBy: adminId,
-            ...formData,
-          }),
+          body: JSON.stringify(payload),
         });
 
-        if (data?.success) {
+        if (data?.success && data.holiday) {
           const isPublished = formData.status === 'active';
           setSuccess(isPublished ? 'Holiday created and published' : 'Holiday created as draft');
           setShowAddDialog(false);
           setFormData({ ...emptyFormData });
+          setHolidays(prev => [...prev, data.holiday]);
           fetchHolidays(activeFilter);
         } else {
           setError(data?.error || t.holiday.failedSaveHoliday);
@@ -274,12 +293,17 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     } catch (err) {
       console.error('Error saving holiday:', err);
       setError(t.holiday.failedFetchConnection);
+      fetchHolidays(activeFilter);
     }
   };
 
-  // Toggle publish/draft on individual holiday
+  // Toggle publish/draft (On/Off) on individual holiday
   const handleTogglePublish = async (holiday: Holiday) => {
     const newStatus = holiday.status === 'active' ? 'draft' : 'active';
+    
+    // Instant optimistic UI update
+    setHolidays(prev => prev.map(h => h.id === holiday.id ? { ...h, status: newStatus } : h));
+
     try {
       const data = await fetchJSON('/api/holidays', {
         method: 'PUT',
@@ -291,37 +315,46 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
       });
 
       if (data?.success) {
-        setSuccess(newStatus === 'active' ? `${holiday.holidayName} published` : `${holiday.holidayName} moved to draft`);
+        setSuccess(newStatus === 'active' ? `"${holiday.holidayName}" is now Active (Visible to Employees)` : `"${holiday.holidayName}" is now Off / Draft (Hidden)`);
         fetchHolidays(activeFilter);
       } else {
         setError(data?.error || 'Failed to update status');
+        fetchHolidays(activeFilter);
       }
     } catch (err) {
       console.error('Error updating status:', err);
       setError(t.holiday.failedFetchConnection);
+      fetchHolidays(activeFilter);
     }
   };
 
   // Delete holiday
   const handleDeleteHoliday = async () => {
     if (!deletingHoliday) return;
+    const targetId = deletingHoliday.id;
+    const targetName = deletingHoliday.holidayName;
+
+    // Optimistic UI delete
+    setHolidays(prev => prev.filter(h => h.id !== targetId));
+    setDeletingHoliday(null);
 
     try {
       setError(null);
-      const data = await fetchJSON(`/api/holidays?id=${deletingHoliday.id}`, {
+      const data = await fetchJSON(`/api/holidays?id=${targetId}`, {
         method: 'DELETE',
       });
 
       if (data?.success) {
-        setSuccess(t.holiday.holidayDeleted);
-        setDeletingHoliday(null);
+        setSuccess(`"${targetName}" ${t.holiday.holidayDeleted}`);
         fetchHolidays(activeFilter);
       } else {
         setError(data?.error || t.holiday.failedDeleteHoliday);
+        fetchHolidays(activeFilter);
       }
     } catch (err) {
       console.error('Error deleting holiday:', err);
       setError(t.holiday.failedFetchConnection);
+      fetchHolidays(activeFilter);
     }
   };
 
@@ -329,16 +362,16 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const openEditDialog = (holiday: Holiday) => {
     setEditingHoliday(holiday);
     setFormData({
-      holidayName: holiday.holidayName,
-      date: holiday.date,
-      holidayType: holiday.holidayType,
+      holidayName: holiday.holidayName || '',
+      date: holiday.date || '',
+      holidayType: holiday.holidayType || 'company',
       description: holiday.description || '',
-      allowPunch: holiday.allowPunch,
-      isHalfDay: holiday.isHalfDay,
-      isPaid: holiday.isPaid,
-      isOptional: holiday.isOptional,
-      compensatoryOff: holiday.compensatoryOff,
-      isRecurring: holiday.isRecurring,
+      allowPunch: Boolean(holiday.allowPunch),
+      isHalfDay: Boolean(holiday.isHalfDay),
+      isPaid: holiday.isPaid !== undefined ? Boolean(holiday.isPaid) : true,
+      isOptional: Boolean(holiday.isOptional),
+      compensatoryOff: Boolean(holiday.compensatoryOff),
+      isRecurring: Boolean(holiday.isRecurring),
       recurringDay: holiday.recurringDay || 0,
       status: holiday.status || 'draft',
     });
@@ -415,8 +448,8 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   // Filter tabs data
   const filterTabs = [
     { key: 'all' as const, label: (t.holiday as Record<string, string>).all || fallbackT.all, count: holidays.length },
-    { key: 'active' as const, label: fallbackT.published, count: stats?.activeHolidays || 0 },
-    { key: 'draft' as const, label: t.holiday.draft, count: stats?.draftHolidays || 0 },
+    { key: 'active' as const, label: 'Published / Active', count: stats?.activeHolidays || 0 },
+    { key: 'draft' as const, label: 'Drafts / Off', count: stats?.draftHolidays || 0 },
   ];
 
   return (
@@ -430,18 +463,18 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
               setFormData({ ...emptyFormData });
               setShowAddDialog(true);
             }}
-            className="bg-gradient-to-r from-emerald-500 to-teal-600 w-full sm:w-auto"
+            className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm w-full sm:w-auto font-medium"
           >
             <Plus className="h-4 w-4 mr-2" />
             {t.holiday.addHoliday}
           </Button>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="secondary" className="text-xs">
-            <Eye className="h-3 w-3 mr-1" />
+          <Badge variant="secondary" className="text-xs font-normal">
+            <Eye className="h-3 w-3 mr-1 text-emerald-500" />
             {stats?.activeHolidays || 0} {t.holiday.employeesCanSee}
           </Badge>
-          <Badge variant="outline" className="text-xs border-dashed text-amber-600 dark:text-amber-400 border-amber-400">
+          <Badge variant="outline" className="text-xs border-dashed text-amber-600 dark:text-amber-400 border-amber-400 font-normal">
             <EyeOff className="h-3 w-3 mr-1" />
             {stats?.draftHolidays || 0} {t.holiday.draft}
           </Badge>
@@ -453,8 +486,8 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
           {[
             { label: t.holiday.total, value: stats.totalHolidays, color: 'text-foreground' },
-            { label: fallbackT.published, value: stats.activeHolidays, color: 'text-emerald-500' },
-            { label: t.holiday.draft, value: stats.draftHolidays, color: 'text-amber-500' },
+            { label: 'Active', value: stats.activeHolidays, color: 'text-emerald-500' },
+            { label: 'Draft / Off', value: stats.draftHolidays, color: 'text-amber-500' },
             { label: t.holiday.paid, value: stats.paidHolidays, color: 'text-emerald-600' },
             { label: t.holiday.halfDay, value: stats.halfDayHolidays, color: 'text-amber-500' },
             { label: t.holiday.optionalLabel, value: stats.optionalHolidays, color: 'text-blue-500' },
@@ -640,7 +673,9 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                   {getUpcomingHolidays().map((holiday) => {
                     const typeInfo = getHolidayTypeInfo(holiday.holidayType);
                     return (
-                      <div key={holiday.id} className="p-2 sm:p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+                      <div
+                        key={holiday.id}
+                        className="p-2 sm:p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
                         onClick={() => openEditDialog(holiday)}
                       >
                         <div className="flex items-center justify-between mb-1">
@@ -670,7 +705,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
               <CardTitle className="text-base sm:text-lg">{t.holiday.allHolidays} ({holidays.length})</CardTitle>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[300px] sm:h-[350px]">
+              <ScrollArea className="h-[320px] sm:h-[360px]">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-8"><RefreshCw className="h-6 w-6 animate-spin text-emerald-500" /></div>
                 ) : holidays.length === 0 ? (
@@ -680,7 +715,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                     <p className="text-xs text-muted-foreground mt-1">{t.holiday.addHolidaysManually}</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {holidays
                       .sort((a, b) => a.date.localeCompare(b.date))
                       .map((holiday) => {
@@ -688,24 +723,48 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                         const isDraft = holiday.status === 'draft';
                         const isActive = holiday.status === 'active';
                         return (
-                          <div key={holiday.id} className={`p-2 sm:p-3 rounded-lg transition-colors ${isDraft ? 'bg-amber-50 dark:bg-amber-950/20 border border-dashed border-amber-300 dark:border-amber-700' : 'bg-muted/30'}`}>
+                          <div
+                            key={holiday.id}
+                            className={`p-2.5 sm:p-3 rounded-lg transition-all border ${
+                              isDraft
+                                ? 'bg-amber-50/70 dark:bg-amber-950/20 border-dashed border-amber-300 dark:border-amber-700'
+                                : 'bg-card border-border/70 shadow-sm'
+                            }`}
+                          >
                             <div className="flex items-start justify-between gap-2">
+                              {/* Left Info Column */}
                               <div className="flex-1 min-w-0 cursor-pointer" onClick={() => openEditDialog(holiday)}>
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="font-medium text-xs sm:text-sm truncate">{holiday.holidayName}</p>
-                                  {/* Publish/Draft Badge */}
-                                  {isActive ? (
-                                    <Badge className="bg-emerald-500 text-white text-[8px] px-1.5 py-0">{fallbackT.published}</Badge>
-                                  ) : (
-                                    <Badge variant="outline" className="text-[8px] px-1.5 py-0 border-amber-400 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30">{t.holiday.draft}</Badge>
-                                  )}
+                                  <p className="font-semibold text-xs sm:text-sm text-foreground truncate">{holiday.holidayName}</p>
+                                  {/* On/Off Status Badge Button */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleTogglePublish(holiday);
+                                    }}
+                                    className={`inline-flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full font-medium transition-colors ${
+                                      isActive
+                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 hover:bg-emerald-200'
+                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 hover:bg-amber-200'
+                                    }`}
+                                    title={isActive ? 'Click to turn OFF (Draft)' : 'Click to turn ON (Publish)'}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                    {isActive ? 'Active (On)' : 'Draft (Off)'}
+                                  </button>
                                 </div>
-                                <p className="text-[10px] sm:text-xs text-muted-foreground">
+                                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
                                   {new Date(holiday.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                                 </p>
-                                {/* Feature badges */}
-                                <div className="flex flex-wrap gap-1 mt-1">
-                                  <Badge className={`${typeInfo.color} text-white text-[10px]`}>{typeInfo.label}</Badge>
+                                {holiday.description && (
+                                  <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5 italic">
+                                    {holiday.description}
+                                  </p>
+                                )}
+                                {/* Feature Badges */}
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  <Badge className={`${typeInfo.color} text-white text-[9px] px-1.5 py-0`}>{typeInfo.label}</Badge>
                                   {holiday.isHalfDay && <Badge variant="outline" className="text-[8px] px-1 py-0 border-amber-400 text-amber-500">{t.holiday.halfDayLabel}</Badge>}
                                   {holiday.allowPunch && <Badge variant="outline" className="text-[8px] px-1 py-0 border-emerald-400 text-emerald-500">{t.holiday.punchAllowed}</Badge>}
                                   {!holiday.isPaid && <Badge variant="outline" className="text-[8px] px-1 py-0 border-red-400 text-red-500">{t.holiday.unpaidLabel}</Badge>}
@@ -713,23 +772,36 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                                   {holiday.compensatoryOff && <Badge variant="outline" className="text-[8px] px-1 py-0 border-teal-400 text-teal-500">{t.holiday.compOffLabel}</Badge>}
                                 </div>
                               </div>
-                              {/* Action buttons column */}
-                              <div className="flex flex-col items-center gap-0.5">
-                                {/* Publish/Draft Toggle Switch */}
-                                <div className="flex items-center" title={isActive ? t.holiday.hideFromEmployees : t.holiday.showToEmployees}>
-                                  <Switch
-                                    checked={isActive}
-                                    onCheckedChange={() => handleTogglePublish(holiday)}
-                                    className="scale-75 origin-right"
-                                  />
-                                </div>
-                                {/* Edit */}
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(holiday)}>
+
+                              {/* Right Actions Column */}
+                              <div className="flex items-center gap-1 self-start flex-shrink-0">
+                                {/* Edit Button */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 w-7 sm:w-auto sm:px-2 text-xs flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditDialog(holiday);
+                                  }}
+                                  title="Edit Holiday"
+                                >
                                   <Edit className="h-3 w-3" />
+                                  <span className="hidden sm:inline">Edit</span>
                                 </Button>
-                                {/* Delete */}
-                                <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8 text-red-500" onClick={() => setDeletingHoliday(holiday)}>
+                                {/* Delete Button */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 w-7 sm:w-auto sm:px-2 text-xs flex items-center gap-1 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 border-red-200 dark:border-red-800"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeletingHoliday(holiday);
+                                  }}
+                                  title="Delete Holiday"
+                                >
                                   <Trash2 className="h-3 w-3" />
+                                  <span className="hidden sm:inline">Delete</span>
                                 </Button>
                               </div>
                             </div>
