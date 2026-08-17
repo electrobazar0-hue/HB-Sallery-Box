@@ -1,6 +1,15 @@
 const path = require('path');
 const http = require('http');
+const { execSync } = require('child_process');
 const next = require('next');
+
+try {
+  console.log('> Ensuring database tables are in sync on boot...');
+  execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' });
+  console.log('> Database is ready.');
+} catch (e) {
+  console.warn('> Database init warning:', e.message);
+}
 
 const dev = process.env.NODE_ENV !== 'production';
 const port = parseInt(process.env.PORT || '10000', 10);

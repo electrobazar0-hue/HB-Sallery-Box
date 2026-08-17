@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     console.error('Registration error:', error);
     return NextResponse.json({
       success: false,
-      error: 'Registration failed. Please try again.',
+      error: error instanceof Error ? error.message : 'Registration failed. Please try again.',
     }, { status: 500 });
   }
 }
