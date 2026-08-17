@@ -433,7 +433,7 @@ export async function POST(request: NextRequest) {
             holidayType: holiday.type,
             description: syncDescription,
             createdBy: adminId,
-            status: 'active',
+            status: 'draft',
             syncSource: source,
             isPaid: true,
           },
@@ -445,7 +445,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const message = `All ${added} Indian holidays for year ${year} cleanly refreshed & synced! (${sourceLabel})`;
+    const message = `All ${added} Indian holidays for year ${year} synced as drafts! Review & click Publish when ready. (${sourceLabel})`;
 
     return NextResponse.json({
       success: true,
