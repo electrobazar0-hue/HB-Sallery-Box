@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 
 export default function OfflinePage() {
+  const router = useRouter();
   const [isRetrying, setIsRetrying] = useState(false);
   const [online, setOnline] = useState(() => {
     // Check if already online during initialization
@@ -17,7 +19,7 @@ export default function OfflinePage() {
     setIsRetrying(true);
     setTimeout(() => {
       if (navigator.onLine) {
-        window.location.href = '/';
+        router.push('/');
       } else {
         setIsRetrying(false);
       }
@@ -30,7 +32,7 @@ export default function OfflinePage() {
       setOnline(true);
       // Redirect to home after a short delay
       setTimeout(() => {
-        window.location.href = '/';
+        router.push('/');
       }, 1000);
     };
 
@@ -45,7 +47,7 @@ export default function OfflinePage() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
+  }, [router]);
 
   return (
     <div style={{

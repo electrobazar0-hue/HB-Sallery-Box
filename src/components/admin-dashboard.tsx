@@ -6,7 +6,7 @@ import {
   LogOut, Users, Clock, DollarSign, Calendar,
   Bell, ChevronRight, FileText, Settings,
   Home, Menu, X, Star, MessageSquare, Edit,
-  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle
+  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle, MapPin, Navigation, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +58,10 @@ interface Employee {
   ifscCode?: string;
   upiId?: string;
   profilePhoto?: string;
+  geofenceEnabled?: boolean;
+  geofenceLat?: number | null;
+  geofenceLng?: number | null;
+  geofenceRadius?: number | null;
 }
 
 interface SalaryRecord {
@@ -168,6 +172,28 @@ function getLocalDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+const initialEmployeeForm = {
+  name: '',
+  phone: '',
+  email: '',
+  address: '',
+  designation: '',
+  department: '',
+  salary: 0,
+  userId: '',
+  password: '',
+  securityPassword: '',
+  aadharNumber: '',
+  panNumber: '',
+  accountNumber: '',
+  ifscCode: '',
+  upiId: '',
+  geofenceEnabled: false,
+  geofenceLat: '',
+  geofenceLng: '',
+  geofenceRadius: '100',
+};
+
 export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const { user, updateUser, updateOrganizationLogo } = useAuthStore();
   const { t } = useLanguageStore();
@@ -214,13 +240,11 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [showPayroll, setShowPayroll] = useState(false);
   const [selectedPayrollMonth, setSelectedPayrollMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [employeeDialogStep, setEmployeeDialogStep] = useState<'details' | 'geofence'>('details');
+  const [isDetectingGeofence, setIsDetectingGeofence] = useState(false);
 
   // Form states
-  const [employeeForm, setEmployeeForm] = useState({
-    name: '', phone: '', email: '', address: '', designation: '', department: '', salary: 0,
-    userId: '', password: '', securityPassword: '',
-    aadharNumber: '', panNumber: '', accountNumber: '', ifscCode: '', upiId: ''
-  });
+  const [employeeForm, setEmployeeForm] = useState(initialEmployeeForm);
   const [salaryForm, setSalaryForm] = useState({
     month: '', baseSalary: 0, overtime: 0, incentives: 0, deductions: 0
   });
@@ -266,7 +290,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     const fetchData = async () => {
       // Fetch employees - NO DEMO DATA, only real data from database
       try {
-        const data = await fetchJSON(`/api/employees?adminId=${user.id}`);
+        const data = await fetchJSON(`/api/employees?adminId=${user.id}`, { cache: 'no-store' });
         if (mounted && data?.employees) {
           setEmployees(data.employees);
         }
@@ -377,33 +401,184 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     return () => { mounted = false; };
   }, [showEmployeeList, user?.organizationId]);
 
-  const handleAddEmployee = async () => {
-    // Validation with detailed error messages
-    if (!employeeForm.name?.trim()) {
+  const resetEmployeeDialog = () => {
+    setEmployeeForm({ ...initialEmployeeForm });
+    setEmployeeDialogStep('details');
+    setIsDetectingGeofence(false);
+  };
+
+  const closeEmployeeDialog = () => {
+    setShowAddEmployee(false);
+    setEditingEmployee(null);
+    resetEmployeeDialog();
+  };
+
+  const getEmployeeDraft = () => editingEmployee || employeeForm;
+
+  const validateEmployeeDetails = () => {
+    const draft = getEmployeeDraft();
+
+    if (!draft.name?.trim()) {
       addNotification({ title: t.common.error, body: t.employee.validationName, type: 'announcement' });
-      return;
+      return false;
     }
-    if (!employeeForm.phone?.trim() || employeeForm.phone.length < 10) {
+    if (!draft.phone?.trim() || draft.phone.replace(/\D/g, '').length < 10) {
       addNotification({ title: t.common.error, body: t.employee.validationPhone, type: 'announcement' });
-      return;
+      return false;
     }
-    if (!employeeForm.userId?.trim() || employeeForm.userId.length < 4) {
+    if (!editingEmployee && (!employeeForm.userId?.trim() || employeeForm.userId.length < 4)) {
       addNotification({ title: t.common.error, body: t.employee.validationUserId, type: 'announcement' });
-      return;
+      return false;
     }
-    if (!employeeForm.password || employeeForm.password.length < 6) {
+    if (!editingEmployee && (!employeeForm.password || employeeForm.password.length < 6)) {
       addNotification({ title: t.common.error, body: t.employee.validationPassword, type: 'announcement' });
-      return;
+      return false;
     }
-    if (!employeeForm.securityPassword || employeeForm.securityPassword.length < 4) {
+    if (!editingEmployee && (!employeeForm.securityPassword || employeeForm.securityPassword.length < 4)) {
       addNotification({ title: t.common.error, body: t.employee.validationSecurityPassword, type: 'announcement' });
+      return false;
+    }
+    if (!editingEmployee && (!user?.id || !user?.organizationId)) {
+      addNotification({ title: t.common.error, body: t.employee.sessionExpired, type: 'announcement' });
+      return false;
+    }
+
+    return true;
+  };
+
+  const getGeofenceDraft = () => {
+    if (editingEmployee) {
+      return {
+        enabled: Boolean(editingEmployee.geofenceEnabled),
+        lat: editingEmployee.geofenceLat?.toString() || '',
+        lng: editingEmployee.geofenceLng?.toString() || '',
+        radius: editingEmployee.geofenceRadius?.toString() || '100',
+      };
+    }
+
+    return {
+      enabled: employeeForm.geofenceEnabled,
+      lat: employeeForm.geofenceLat,
+      lng: employeeForm.geofenceLng,
+      radius: employeeForm.geofenceRadius,
+    };
+  };
+
+  const getValidatedGeofencePayload = () => {
+    const geofence = getGeofenceDraft();
+
+    if (!geofence.enabled) {
+      return {
+        geofenceEnabled: false,
+        geofenceLat: null,
+        geofenceLng: null,
+        geofenceRadius: null,
+      };
+    }
+
+    const latText = String(geofence.lat).trim();
+    const lngText = String(geofence.lng).trim();
+    const radiusText = String(geofence.radius).trim();
+    const lat = Number(latText);
+    const lng = Number(lngText);
+    const radius = radiusText ? Number(radiusText) : 100;
+
+    if (!latText || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+      addNotification({ title: t.common.error, body: 'Enter a valid shop latitude for geofence.', type: 'announcement' });
+      return null;
+    }
+    if (!lngText || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+      addNotification({ title: t.common.error, body: 'Enter a valid shop longitude for geofence.', type: 'announcement' });
+      return null;
+    }
+    if (!Number.isFinite(radius) || radius <= 0) {
+      addNotification({ title: t.common.error, body: 'Enter a valid geofence radius in meters.', type: 'announcement' });
+      return null;
+    }
+
+    return {
+      geofenceEnabled: true,
+      geofenceLat: lat,
+      geofenceLng: lng,
+      geofenceRadius: radius,
+    };
+  };
+
+  const updateGeofenceDraft = (updates: {
+    geofenceEnabled?: boolean;
+    geofenceLat?: string;
+    geofenceLng?: string;
+    geofenceRadius?: string;
+  }) => {
+    if (editingEmployee) {
+      const parseOptionalNumber = (value: string | undefined) => {
+        if (value === undefined) return undefined;
+        if (!value.trim()) return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const nextLat = parseOptionalNumber(updates.geofenceLat);
+      const nextLng = parseOptionalNumber(updates.geofenceLng);
+      const nextRadius = parseOptionalNumber(updates.geofenceRadius);
+
+      setEditingEmployee({
+        ...editingEmployee,
+        geofenceEnabled: updates.geofenceEnabled ?? editingEmployee.geofenceEnabled,
+        geofenceLat: nextLat !== undefined ? nextLat : editingEmployee.geofenceLat,
+        geofenceLng: nextLng !== undefined ? nextLng : editingEmployee.geofenceLng,
+        geofenceRadius: nextRadius !== undefined ? nextRadius : editingEmployee.geofenceRadius,
+      });
       return;
     }
-    if (!user?.id || !user?.organizationId) {
+
+    setEmployeeForm(prev => ({ ...prev, ...updates }));
+  };
+
+  const handleDetectGeofenceLocation = () => {
+    if (!navigator.geolocation) {
+      addNotification({ title: t.common.error, body: 'GPS is not supported on this device.', type: 'announcement' });
+      return;
+    }
+
+    setIsDetectingGeofence(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        updateGeofenceDraft({
+          geofenceEnabled: true,
+          geofenceLat: position.coords.latitude.toFixed(6),
+          geofenceLng: position.coords.longitude.toFixed(6),
+        });
+        setIsDetectingGeofence(false);
+      },
+      () => {
+        addNotification({ title: t.common.error, body: 'Unable to detect shop location. Please enter latitude and longitude manually.', type: 'announcement' });
+        setIsDetectingGeofence(false);
+      },
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
+    );
+  };
+
+  const handleEmployeeDetailsNext = () => {
+    if (!validateEmployeeDetails()) return;
+    setEmployeeDialogStep('geofence');
+  };
+
+  const handleAddEmployee = async () => {
+    if (!validateEmployeeDetails()) {
+      setEmployeeDialogStep('details');
+      return;
+    }
+
+    const geofencePayload = getValidatedGeofencePayload();
+    if (!geofencePayload) return;
+
+    const adminId = user?.id;
+    const organizationId = user?.organizationId;
+    if (!adminId || !organizationId) {
       addNotification({ title: t.common.error, body: t.employee.sessionExpired, type: 'announcement' });
       return;
     }
-    
+
     setIsLoading(true);
     try {
       const data = await fetchJSON('/api/employees', {
@@ -425,25 +600,20 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           accountNumber: employeeForm.accountNumber?.trim() || null,
           ifscCode: employeeForm.ifscCode?.trim() || null,
           upiId: employeeForm.upiId?.trim() || null,
-          adminId: user.id,
-          organizationId: user.organizationId,
+          adminId,
+          organizationId,
+          ...geofencePayload,
         }),
       });
       
       if (data && !data._httpError && data.success) {
-        setEmployees([...employees, data.employee]);
+        setEmployees(prev => [data.employee, ...prev.filter(employee => employee.id !== data.employee.id)]);
         addNotification({
           title: t.messages.employeeAdded,
           body: `${employeeForm.name} ${t.employee.employeeAddedSuccess}`,
           type: 'announcement',
         });
-        // Reset form and close dialog
-        setShowAddEmployee(false);
-        setEmployeeForm({ 
-          name: '', phone: '', email: '', address: '', designation: '', department: '', salary: 0, 
-          userId: '', password: '', securityPassword: '',
-          aadharNumber: '', panNumber: '', accountNumber: '', ifscCode: '', upiId: ''
-        });
+        closeEmployeeDialog();
       } else {
         addNotification({
           title: t.common.error,
@@ -459,6 +629,40 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         type: 'announcement',
       });
     }
+    setIsLoading(false);
+  };
+
+  const handleUpdateEmployee = async () => {
+    if (!editingEmployee) return;
+    if (!validateEmployeeDetails()) {
+      setEmployeeDialogStep('details');
+      return;
+    }
+
+    const geofencePayload = getValidatedGeofencePayload();
+    if (!geofencePayload) return;
+
+    setIsLoading(true);
+    const updatePayload = {
+      ...editingEmployee,
+      phone: editingEmployee.phone.replace(/\D/g, ''),
+      ...geofencePayload,
+    };
+    const result = await fetchJSON('/api/employees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatePayload),
+    });
+
+    if (result && !result._httpError) {
+      const savedEmployee = result.employee || updatePayload;
+      setEmployees(prev => prev.map(employee => employee.id === savedEmployee.id ? savedEmployee : employee));
+      addNotification({ title: t.messages.employeeUpdated, body: `${savedEmployee.name} updated`, type: 'announcement' });
+      closeEmployeeDialog();
+    } else if (result?._httpError) {
+      addNotification({ title: t.common.error, body: result.error || 'Failed to update employee', type: 'announcement' });
+    }
+
     setIsLoading(false);
   };
 
@@ -834,6 +1038,8 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     }
   }, [showIncentives, user?.organizationId]);
 
+  const geofenceDraft = getGeofenceDraft();
+
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background">
       {/* Header */}
@@ -918,7 +1124,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
               </div>
               <nav className="p-4 space-y-1">
                 {menuItems.map((item) => (
-                  <button key={item.id} onClick={() => handleMenuClick(item.id)}
+                  <button key={item.id} onClick={() => { handleMenuClick(item.id); setSidebarOpen(false); }}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                       activeTab === item.id ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-muted'
                     }`}>
@@ -980,7 +1186,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 p-4 pb-6 md:p-6 overflow-y-auto">
+        <main className="flex-1 p-3.5 sm:p-4 md:p-6 pb-28 md:pb-8 overflow-y-auto">
           <div className="max-w-6xl mx-auto space-y-4 md:space-y-6">
             {/* Welcome Section */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -990,7 +1196,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                 <p className="text-muted-foreground">{user?.organizationName || t.dashboard.organizationDashboard}</p>
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => setShowAddEmployee(true)}
+                <Button onClick={() => { resetEmployeeDialog(); setShowAddEmployee(true); }}
                   className="bg-gradient-to-r from-emerald-500 to-teal-600">
                   <UserPlus className="h-4 w-4 mr-2" />
                   {t.dashboard.addEmployee}
@@ -1075,152 +1281,298 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
 
       {/* Add/Edit Employee Dialog */}
       <Dialog open={showAddEmployee || !!editingEmployee} onOpenChange={(open) => {
-        if (!open) { 
-          setShowAddEmployee(false); 
-          setEditingEmployee(null); 
-          setEmployeeForm({ 
-            name: '', phone: '', email: '', address: '', designation: '', department: '', salary: 0, 
-            userId: '', password: '', securityPassword: '',
-            aadharNumber: '', panNumber: '', accountNumber: '', ifscCode: '', upiId: ''
-          }); 
-        }
+        if (!open) closeEmployeeDialog();
       }}>
         <DialogContent className="max-w-lg max-h-[90dvh]">
-          <DialogHeader><DialogTitle>{editingEmployee ? t.employee.editEmployee : t.employee.addNewEmployee}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editingEmployee
+                ? t.employee.editEmployee
+                : employeeDialogStep === 'details'
+                  ? t.employee.addNewEmployee
+                  : 'Apply Geofence'}
+            </DialogTitle>
+            <DialogDescription>
+              {employeeDialogStep === 'details' ? 'Employee details' : 'Shop coverage area'}
+            </DialogDescription>
+          </DialogHeader>
           <ScrollArea className="max-h-[70dvh]">
-          <div className="space-y-4 pr-4">
-            <div className="space-y-2">
-              <Label>{t.employee.nameRequired}</Label>
-              <Input placeholder={t.employee.employeeNamePlaceholder} value={editingEmployee ? editingEmployee.name : employeeForm.name}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, name: e.target.value }) : setEmployeeForm({ ...employeeForm, name: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t.employee.phoneRequired}</Label>
-              <Input placeholder={t.employee.phonePlaceholder} value={editingEmployee ? editingEmployee.phone : employeeForm.phone}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, phone: e.target.value }) : setEmployeeForm({ ...employeeForm, phone: e.target.value })} />
-            </div>
-            {!editingEmployee && (
-              <>
-                <div className="space-y-2">
-                  <Label>{t.employee.userIdRequired}</Label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input placeholder={t.employee.userIdPlaceholder} value={employeeForm.userId}
-                      onChange={(e) => setEmployeeForm({ ...employeeForm, userId: e.target.value.toLowerCase().replace(/\s+/g, '') })} className="pl-10" />
+            <div className="space-y-4 pr-4">
+              {employeeDialogStep === 'details' ? (
+                <>
+                  <div className="space-y-2">
+                    <Label>{t.employee.nameRequired}</Label>
+                    <Input placeholder={t.employee.employeeNamePlaceholder} value={editingEmployee ? editingEmployee.name : employeeForm.name}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, name: e.target.value }) : setEmployeeForm({ ...employeeForm, name: e.target.value })} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Minimum 4 characters</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>{t.employee.passwordRequired}</Label>
-                  <div className="relative">
-                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input type="password" placeholder={t.employee.passwordPlaceholder} value={employeeForm.password}
-                      onChange={(e) => setEmployeeForm({ ...employeeForm, password: e.target.value })} className="pl-10" />
+                  <div className="space-y-2">
+                    <Label>{t.employee.phoneRequired}</Label>
+                    <Input placeholder={t.employee.phonePlaceholder} value={editingEmployee ? editingEmployee.phone : employeeForm.phone}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, phone: e.target.value }) : setEmployeeForm({ ...employeeForm, phone: e.target.value })} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>{t.employee.securityPasswordRequired}</Label>
-                  <div className="relative">
-                    <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input type="password" placeholder={t.employee.securityPasswordPlaceholder} value={employeeForm.securityPassword}
-                      onChange={(e) => setEmployeeForm({ ...employeeForm, securityPassword: e.target.value })} className="pl-10" />
+                  {!editingEmployee && (
+                    <>
+                      <div className="space-y-2">
+                        <Label>{t.employee.userIdRequired}</Label>
+                        <div className="relative">
+                          <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input placeholder={t.employee.userIdPlaceholder} value={employeeForm.userId}
+                            onChange={(e) => setEmployeeForm({ ...employeeForm, userId: e.target.value.toLowerCase().replace(/\s+/g, '') })} className="pl-10" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Minimum 4 characters</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t.employee.passwordRequired}</Label>
+                        <div className="relative">
+                          <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input type="password" placeholder={t.employee.passwordPlaceholder} value={employeeForm.password}
+                            onChange={(e) => setEmployeeForm({ ...employeeForm, password: e.target.value })} className="pl-10" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t.employee.securityPasswordRequired}</Label>
+                        <div className="relative">
+                          <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input type="password" placeholder={t.employee.securityPasswordPlaceholder} value={employeeForm.securityPassword}
+                            onChange={(e) => setEmployeeForm({ ...employeeForm, securityPassword: e.target.value })} className="pl-10" />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Remember this - needed for password reset</p>
+                      </div>
+                    </>
+                  )}
+                  <div className="space-y-2">
+                    <Label>{t.employee.email}</Label>
+                    <Input type="email" placeholder={t.employee.emailPlaceholder} value={editingEmployee ? editingEmployee.email || '' : employeeForm.email}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, email: e.target.value }) : setEmployeeForm({ ...employeeForm, email: e.target.value })} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Remember this - needed for password reset</p>
-                </div>
-              </>
-            )}
-            <div className="space-y-2">
-              <Label>{t.employee.email}</Label>
-              <Input type="email" placeholder={t.employee.emailPlaceholder} value={editingEmployee ? editingEmployee.email || '' : employeeForm.email}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, email: e.target.value }) : setEmployeeForm({ ...employeeForm, email: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t.employee.address}</Label>
-              <Input placeholder={t.employee.addressPlaceholder} value={editingEmployee ? editingEmployee.address || '' : employeeForm.address}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, address: e.target.value }) : setEmployeeForm({ ...employeeForm, address: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>{t.employee.designation}</Label><Input placeholder={t.employee.designationPlaceholder} value={editingEmployee ? editingEmployee.designation || '' : employeeForm.designation}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, designation: e.target.value }) : setEmployeeForm({ ...employeeForm, designation: e.target.value })} /></div>
-              <div className="space-y-2"><Label>{t.employee.department}</Label><Input placeholder={t.employee.departmentPlaceholder} value={editingEmployee ? editingEmployee.department || '' : employeeForm.department}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, department: e.target.value }) : setEmployeeForm({ ...employeeForm, department: e.target.value })} /></div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t.salary.baseSalary}</Label>
-              <Input type="number" placeholder={t.employee.salaryPlaceholder} value={editingEmployee ? editingEmployee.salary : employeeForm.salary}
-                onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, salary: Number(e.target.value) }) : setEmployeeForm({ ...employeeForm, salary: Number(e.target.value) })} />
-            </div>
-            
-            {/* Bank Details Section */}
-            <div className="border-t pt-4 mt-4">
-              <h4 className="font-medium mb-3 flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                {t.employee.bankDetails}
-              </h4>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>{t.employee.aadharNumber}</Label>
-                  <Input placeholder={t.employee.aadharPlaceholder} maxLength={12} value={editingEmployee ? editingEmployee.aadharNumber || '' : employeeForm.aadharNumber}
-                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, aadharNumber: e.target.value.replace(/\D/g, '') }) : setEmployeeForm({ ...employeeForm, aadharNumber: e.target.value.replace(/\D/g, '') })} />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t.employee.panNumber}</Label>
-                  <Input placeholder={t.employee.panPlaceholder} maxLength={10} value={editingEmployee ? editingEmployee.panNumber || '' : employeeForm.panNumber}
-                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, panNumber: e.target.value.toUpperCase() }) : setEmployeeForm({ ...employeeForm, panNumber: e.target.value.toUpperCase() })} />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-3">
-                <div className="space-y-2">
-                  <Label>{t.employee.accountNumber}</Label>
-                  <Input placeholder={t.employee.accountPlaceholder} value={editingEmployee ? editingEmployee.accountNumber || '' : employeeForm.accountNumber}
-                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, accountNumber: e.target.value }) : setEmployeeForm({ ...employeeForm, accountNumber: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t.employee.ifscCode}</Label>
-                  <Input placeholder={t.employee.ifscPlaceholder} value={editingEmployee ? editingEmployee.ifscCode || '' : employeeForm.ifscCode}
-                    onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, ifscCode: e.target.value.toUpperCase() }) : setEmployeeForm({ ...employeeForm, ifscCode: e.target.value.toUpperCase() })} />
-                </div>
-              </div>
-              <div className="space-y-2 mt-3">
-                <Label>{t.employee.upiId}</Label>
-                <Input placeholder={t.employee.upiPlaceholder} value={editingEmployee ? editingEmployee.upiId || '' : employeeForm.upiId}
-                  onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, upiId: e.target.value }) : setEmployeeForm({ ...employeeForm, upiId: e.target.value })} />
-              </div>
-            </div>
-            
-            {editingEmployee && (
-              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <div className="flex items-center gap-2"><Fingerprint className="h-4 w-4" /><span className="text-sm">{t.settings.biometricLock}</span></div>
-                <button onClick={() => handleToggleBiometric(editingEmployee.id)}
-                  className={`w-12 h-6 rounded-full transition-colors ${editingEmployee.biometricEnabled ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}>
-                  <div className={`w-5 h-5 bg-white rounded-full transition-transform ${editingEmployee.biometricEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => { setShowAddEmployee(false); setEditingEmployee(null); }}>{t.common.cancel}</Button>
-              <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600" onClick={async () => {
-                if (editingEmployee) {
-                  setIsLoading(true);
-                  const result = await fetchJSON('/api/employees', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(editingEmployee),
-                  });
-                  if (result && !result._httpError) {
-                    setEmployees(employees.map(e => e.id === editingEmployee.id ? editingEmployee : e));
-                    setEditingEmployee(null);
-                    addNotification({ title: t.messages.employeeUpdated, body: `${editingEmployee.name} updated`, type: 'announcement' });
-                  } else if (result?._httpError) {
-                    addNotification({ title: t.common.error, body: result.error || 'Failed to update employee', type: 'announcement' });
+                  <div className="space-y-2">
+                    <Label>{t.employee.address}</Label>
+                    <Input placeholder={t.employee.addressPlaceholder} value={editingEmployee ? editingEmployee.address || '' : employeeForm.address}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, address: e.target.value }) : setEmployeeForm({ ...employeeForm, address: e.target.value })} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>{t.employee.designation}</Label><Input placeholder={t.employee.designationPlaceholder} value={editingEmployee ? editingEmployee.designation || '' : employeeForm.designation}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, designation: e.target.value }) : setEmployeeForm({ ...employeeForm, designation: e.target.value })} /></div>
+                    <div className="space-y-2"><Label>{t.employee.department}</Label><Input placeholder={t.employee.departmentPlaceholder} value={editingEmployee ? editingEmployee.department || '' : employeeForm.department}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, department: e.target.value }) : setEmployeeForm({ ...employeeForm, department: e.target.value })} /></div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t.salary.baseSalary}</Label>
+                    <Input type="number" placeholder={t.employee.salaryPlaceholder} value={editingEmployee ? editingEmployee.salary : employeeForm.salary}
+                      onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, salary: Number(e.target.value) }) : setEmployeeForm({ ...employeeForm, salary: Number(e.target.value) })} />
+                  </div>
+                  <div className="border-t pt-4 mt-4">
+                    <h4 className="font-medium mb-3 flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      {t.employee.bankDetails}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t.employee.aadharNumber}</Label>
+                        <Input placeholder={t.employee.aadharPlaceholder} maxLength={12} value={editingEmployee ? editingEmployee.aadharNumber || '' : employeeForm.aadharNumber}
+                          onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, aadharNumber: e.target.value.replace(/\D/g, '') }) : setEmployeeForm({ ...employeeForm, aadharNumber: e.target.value.replace(/\D/g, '') })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t.employee.panNumber}</Label>
+                        <Input placeholder={t.employee.panPlaceholder} maxLength={10} value={editingEmployee ? editingEmployee.panNumber || '' : employeeForm.panNumber}
+                          onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, panNumber: e.target.value.toUpperCase() }) : setEmployeeForm({ ...employeeForm, panNumber: e.target.value.toUpperCase() })} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-3">
+                      <div className="space-y-2">
+                        <Label>{t.employee.accountNumber}</Label>
+                        <Input placeholder={t.employee.accountPlaceholder} value={editingEmployee ? editingEmployee.accountNumber || '' : employeeForm.accountNumber}
+                          onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, accountNumber: e.target.value }) : setEmployeeForm({ ...employeeForm, accountNumber: e.target.value })} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t.employee.ifscCode}</Label>
+                        <Input placeholder={t.employee.ifscPlaceholder} value={editingEmployee ? editingEmployee.ifscCode || '' : employeeForm.ifscCode}
+                          onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, ifscCode: e.target.value.toUpperCase() }) : setEmployeeForm({ ...employeeForm, ifscCode: e.target.value.toUpperCase() })} />
+                      </div>
+                    </div>
+                    <div className="space-y-2 mt-3">
+                      <Label>{t.employee.upiId}</Label>
+                      <Input placeholder={t.employee.upiPlaceholder} value={editingEmployee ? editingEmployee.upiId || '' : employeeForm.upiId}
+                        onChange={(e) => editingEmployee ? setEditingEmployee({ ...editingEmployee, upiId: e.target.value }) : setEmployeeForm({ ...employeeForm, upiId: e.target.value })} />
+                    </div>
+                  </div>
+
+                  {editingEmployee && (
+                    <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                      <div className="flex items-center gap-2"><Fingerprint className="h-4 w-4" /><span className="text-sm">{t.settings.biometricLock}</span></div>
+                      <button onClick={() => handleToggleBiometric(editingEmployee.id)}
+                        className={`w-12 h-6 rounded-full transition-colors ${editingEmployee.biometricEnabled ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}>
+                        <div className={`w-5 h-5 bg-white rounded-full transition-transform ${editingEmployee.biometricEnabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                        <Shield className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm">Geofence & Workplace Range</p>
+                        <p className="text-xs text-muted-foreground">Restrict Punch In & Punch Out to shop / office area</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateGeofenceDraft({ geofenceEnabled: !geofenceDraft.enabled })}
+                      className={`h-6 w-12 rounded-full transition-colors ${geofenceDraft.enabled ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`}
+                      aria-pressed={geofenceDraft.enabled}
+                    >
+                      <span className={`block h-5 w-5 rounded-full bg-white shadow-md transition-transform ${geofenceDraft.enabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+
+                  {geofenceDraft.enabled && (
+                    <div className="space-y-4 rounded-xl border p-4 bg-muted/20">
+                      <div>
+                        <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Shop / Workplace GPS Location</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full mt-2 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-medium"
+                          onClick={handleDetectGeofenceLocation}
+                          disabled={isDetectingGeofence}
+                        >
+                          {isDetectingGeofence ? (
+                            <Activity className="h-4 w-4 mr-2 animate-spin text-emerald-500" />
+                          ) : (
+                            <Navigation className="h-4 w-4 mr-2 text-emerald-500" />
+                          )}
+                          📍 Detect / Use My Current GPS Location
+                        </Button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Latitude</Label>
+                          <Input
+                            inputMode="decimal"
+                            value={geofenceDraft.lat}
+                            onChange={(e) => updateGeofenceDraft({ geofenceLat: e.target.value })}
+                            placeholder="e.g. 26.170794"
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Longitude</Label>
+                          <Input
+                            inputMode="decimal"
+                            value={geofenceDraft.lng}
+                            onChange={(e) => updateGeofenceDraft({ geofenceLng: e.target.value })}
+                            placeholder="e.g. 84.659924"
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-semibold">Allowed Radius (Distance)</Label>
+                          <span className="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {geofenceDraft.radius || 100} meters
+                          </span>
+                        </div>
+                        {/* Quick Preset Radius Chips */}
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { label: '50m (Shop)', value: '50' },
+                            { label: '100m (Office)', value: '100' },
+                            { label: '200m (Campus)', value: '200' },
+                            { label: '500m (Complex)', value: '500' },
+                            { label: '1km (Area)', value: '1000' },
+                          ].map((chip) => (
+                            <button
+                              key={chip.value}
+                              type="button"
+                              onClick={() => updateGeofenceDraft({ geofenceRadius: chip.value })}
+                              className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition-all ${
+                                geofenceDraft.radius === chip.value
+                                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                                  : 'bg-background hover:bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {chip.label}
+                            </button>
+                          ))}
+                        </div>
+                        <Input
+                          type="number"
+                          min={10}
+                          value={geofenceDraft.radius}
+                          onChange={(e) => updateGeofenceDraft({ geofenceRadius: e.target.value })}
+                          placeholder="Custom radius in meters (e.g. 100)"
+                          className="mt-1 font-mono text-xs"
+                        />
+                      </div>
+
+                      {geofenceDraft.lat && geofenceDraft.lng && (
+                        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5" /> Workplace Area Configured
+                            </span>
+                            <a
+                              href={`https://www.google.com/maps?q=${geofenceDraft.lat},${geofenceDraft.lng}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-600 hover:underline flex items-center gap-1"
+                            >
+                              View on Map <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                          <p className="text-muted-foreground font-mono text-[11px]">
+                            Coordinates: {geofenceDraft.lat}, {geofenceDraft.lng} • Radius: {geofenceDraft.radius || 100}m
+                          </p>
+                          <p className="text-[11px] text-emerald-600/90 dark:text-emerald-400/90 font-medium">
+                            ✓ Punch In and Punch Out will be strictly allowed only within {geofenceDraft.radius || 100}m of this point.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!geofenceDraft.enabled && (
+                    <div className="rounded-xl border border-dashed p-4 text-xs text-muted-foreground bg-muted/10 space-y-1">
+                      <p className="font-semibold text-foreground">No Geofence Restriction</p>
+                      <p>This employee will be able to punch in and punch out from any location.</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={employeeDialogStep === 'details' ? closeEmployeeDialog : () => setEmployeeDialogStep('details')}>
+                  {employeeDialogStep === 'details' ? t.common.cancel : 'Back'}
+                </Button>
+                <Button className="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold" onClick={() => {
+                  if (employeeDialogStep === 'details') {
+                    handleEmployeeDetailsNext();
+                    return;
                   }
-                  setIsLoading(false);
-                }
-                else { handleAddEmployee(); }
-              }} disabled={isLoading}>{editingEmployee ? t.common.save : t.dashboard.addEmployee}</Button>
+                  if (editingEmployee) {
+                    handleUpdateEmployee();
+                    return;
+                  }
+                  handleAddEmployee();
+                }} disabled={isLoading}>
+                  {employeeDialogStep === 'details' ? (
+                    <>
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </>
+                  ) : (
+                    editingEmployee ? t.common.save : t.dashboard.addEmployee
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
           </ScrollArea>
         </DialogContent>
       </Dialog>
@@ -1231,14 +1583,14 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
           <DialogHeader className="p-4 border-b sticky top-0 bg-background z-10">
             <DialogTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <span>{t.dashboard.employees} ({employees.length})</span>
-              <Button size="sm" className="bg-gradient-to-r from-emerald-500 to-teal-600 w-full sm:w-auto" onClick={() => { setShowEmployeeList(false); setShowAddEmployee(true); }}>
+              <Button size="sm" className="bg-gradient-to-r from-emerald-500 to-teal-600 w-full sm:w-auto" onClick={() => { setShowEmployeeList(false); resetEmployeeDialog(); setShowAddEmployee(true); }}>
                 <UserPlus className="h-4 w-4 mr-2" /> {t.dashboard.addEmployee}
               </Button>
             </DialogTitle>
           </DialogHeader>
           <ScrollArea className="max-h-[70dvh] sm:max-h-[75dvh]">
             <div className="p-4">
-              {/* 🎂 Upcoming Birthdays & Anniversaries */}
+              {/* Upcoming Birthdays & Anniversaries */}
               {employeeEvents && (() => {
                 const todayAll = [...(employeeEvents.today.anniversaries), ...(employeeEvents.today.birthdays)];
                 const upcomingAll = [...(employeeEvents.upcoming.anniversaries), ...(employeeEvents.upcoming.birthdays)]
@@ -1353,6 +1705,11 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                             <p className="font-medium truncate">{emp.name}</p>
                             {emp.starOfMonth && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
                             <Badge variant={emp.active ? 'default' : 'secondary'} className="text-xs">{emp.active ? t.employee.active : t.employee.inactive}</Badge>
+                            {emp.geofenceEnabled && (
+                              <Badge variant="outline" className="text-xs border-emerald-300 text-emerald-600">
+                                <MapPin className="h-3 w-3 mr-1" /> Geofence
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             <span className="truncate">{emp.designation}</span>
@@ -1385,6 +1742,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                         </Button>
                         <Button size="sm" variant="outline" className="h-9 w-9 sm:w-auto" onClick={() => {
                           setEditingEmployee(emp);
+                          setEmployeeDialogStep('details');
                           setShowEmployeeList(false);
                           setShowAddEmployee(true);
                         }}>

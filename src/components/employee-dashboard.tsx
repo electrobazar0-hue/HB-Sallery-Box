@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LogOut, User, Calendar, Clock, DollarSign, Bell,
   FileText, Home, Menu, X, Settings,
-  Camera, MapPin, Check, Fingerprint, Gift, Navigation,
+  Camera, MapPin, Check, Fingerprint, Gift, Navigation, ExternalLink,
   Image as ImageIcon, Megaphone, Receipt, Plus, Trash2, XCircle, PartyPopper
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,13 +26,12 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useGPS } from '@/hooks/use-gps';
+import { useGPS, reverseGeocode, getGoogleMapsUrl } from '@/hooks/use-gps';
 import { useNotifications } from '@/hooks/use-notifications';
 import { CameraCapture } from '@/components/camera-capture';
-import { to12HourFormat, dateTo12HourFormat, dateTo12HourFormatWithSeconds, dateTo24HourFormatWithSeconds, formatTimeWithSeconds } from '@/lib/time-utils';
+import { to12HourFormat, to12HourFormatWithSeconds, dateTo12HourFormat, dateTo12HourFormatWithSeconds, dateTo24HourFormatWithSeconds, formatTimeWithSeconds } from '@/lib/time-utils';
 import { fetchJSON } from '@/lib/utils';
-// import { isWithinGeofence, getGeofenceViolationMessage } from '@/lib/geofence';
-
+import { getGeofenceViolationMessage } from '@/lib/geofence';
 interface AttendanceRecord {
   id: string;
   date: string;
@@ -120,12 +119,73 @@ function getLocalDateKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function LocationDisplayBadge({
+  lat,
+  lng,
+  color = 'emerald',
+  className = '',
+}: {
+  lat?: number | null;
+  lng?: number | null;
+  color?: 'emerald' | 'red' | 'blue' | 'indigo';
+  className?: string;
+}) {
+  const [address, setAddress] = useState<string>('');
+
+  useEffect(() => {
+    if (lat && lng) {
+      reverseGeocode(lat, lng).then(setAddress);
+    }
+  }, [lat, lng]);
+
+  if (!lat || !lng) return null;
+
+  const mapsUrl = getGoogleMapsUrl(lat, lng);
+  const colorMap = {
+    emerald: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30 hover:bg-emerald-500/30',
+    red: 'bg-red-500/20 text-red-200 border-red-400/30 hover:bg-red-500/30',
+    blue: 'bg-blue-500/20 text-blue-200 border-blue-400/30 hover:bg-blue-500/30',
+    indigo: 'bg-indigo-500/20 text-indigo-200 border-indigo-400/30 hover:bg-indigo-500/30',
+  };
+
+  return (
+    <a
+      href={mapsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Click to view exact pin on Google Maps"
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all cursor-pointer group max-w-full overflow-hidden ${colorMap[color]} ${className}`}
+    >
+      <MapPin className="w-3.5 h-3.5 shrink-0 text-current group-hover:scale-110 transition-transform" />
+      <span className="font-mono font-medium shrink-0">{lat.toFixed(5)}, {lng.toFixed(5)}</span>
+      {address && (
+        <span className="opacity-90 max-w-[120px] sm:max-w-[200px] truncate">
+          • {address}
+        </span>
+      )}
+      <ExternalLink className="w-3 h-3 opacity-60 ml-0.5 group-hover:opacity-100 shrink-0" />
+    </a>
+  );
+}
+
 export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardProps) {
   const { user, updateUser } = useAuthStore();
   const { t } = useLanguageStore();
   const [activeTab, setActiveTab] = useState('home');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isPunchedIn, setIsPunchedIn] = useState(false);
+  const [isPunchedIn, setIsPunchedIn] = useState(() => {
+    if (typeof window !== 'undefined' && user?.id) {
+      try {
+        const cached = localStorage.getItem(`hb_attendance_${user.id}`);
+        if (cached) {
+          const records: AttendanceRecord[] = JSON.parse(cached);
+          const open = records.find(r => r.punchIn && !r.punchOut);
+          if (open) return true;
+        }
+      } catch {}
+    }
+    return false;
+  });
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [showSalaryDialog, setShowSalaryDialog] = useState(false);
@@ -137,10 +197,32 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   const [showPhotoDialog, setShowPhotoDialog] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [pendingPunchType, setPendingPunchType] = useState<'in' | 'out' | null>(null);
-  const [punchTime, setPunchTime] = useState<{ in?: string; out?: string }>({});
+  const [punchTime, setPunchTime] = useState<{ in?: string; out?: string }>(() => {
+    if (typeof window !== 'undefined' && user?.id) {
+      try {
+        const cached = localStorage.getItem(`hb_attendance_${user.id}`);
+        if (cached) {
+          const records: AttendanceRecord[] = JSON.parse(cached);
+          const active = records.find(r => r.date === getLocalDateKey() || (r.punchIn && !r.punchOut));
+          if (active?.punchIn) return { in: active.punchIn, out: active.punchOut };
+        }
+      } catch {}
+    }
+    return {};
+  });
   const [punchInLocation, setPunchInLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [punchOutLocation, setPunchOutLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>(() => {
+    if (typeof window !== 'undefined' && user?.id) {
+      try {
+        const cached = localStorage.getItem(`hb_attendance_${user.id}`);
+        if (cached) {
+          return JSON.parse(cached);
+        }
+      } catch {}
+    }
+    return [];
+  });
   const [salaryHistory, setSalaryHistory] = useState<SalaryRecord[]>([]);
   const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
   const [showLeaveHistoryDialog, setShowLeaveHistoryDialog] = useState(false);
@@ -198,6 +280,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     email: user?.email || '',
     address: '',
   });
+  const currentDateKey = useMemo(() => getLocalDateKey(currentTime), [currentTime]);
 
   // Update current time every second
   useEffect(() => {
@@ -221,6 +304,11 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
   const applyAttendanceSnapshot = useCallback((records: AttendanceRecord[]) => {
     setAttendanceHistory(records);
+    if (typeof window !== 'undefined' && user?.id && records && records.length > 0) {
+      try {
+        localStorage.setItem(`hb_attendance_${user.id}`, JSON.stringify(records));
+      } catch {}
+    }
 
     const today = getLocalDateKey();
     const todayRecord = records.find((a) => a.date === today);
@@ -247,7 +335,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     setPunchTime({});
     setPunchInLocation(null);
     setPunchOutLocation(null);
-  }, []);
+  }, [user?.id]);
 
   const refreshAttendance = useCallback(async (signal?: AbortSignal) => {
     if (!user?.id) {
@@ -284,7 +372,6 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       refreshAttendance(controller.signal).catch((error) => {
         if (controller.signal.aborted) return;
         console.error('Error fetching attendance:', error);
-        applyAttendanceSnapshot([]);
       });
     };
 
@@ -504,7 +591,107 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   };
 
   const { isLeave: isTodayApprovedLeave, leaveRecord: todayLeaveRecord } = checkIfTodayIsApprovedLeave();
-  const hasCompletedAttendanceToday = Boolean(punchTime.in && punchTime.out && !isPunchedIn);
+  const todayAttendanceRecord = useMemo(() => {
+    // 1. Exact match with today's date from memory state
+    if (attendanceHistory && attendanceHistory.length > 0) {
+      const exactToday = attendanceHistory.find((record) => record.date === currentDateKey);
+      if (exactToday) return exactToday;
+
+      const openRecord = attendanceHistory.find((record) => record.punchIn && !record.punchOut);
+      if (openRecord) return openRecord;
+
+      const latest = attendanceHistory[0];
+      if (latest && latest.date === getLocalDateKey()) return latest;
+    }
+
+    // 2. Active in-memory punch state
+    if (isPunchedIn || punchTime.in) {
+      return {
+        id: 'local_active',
+        date: currentDateKey,
+        punchIn: punchTime.in || '12:00:00',
+        punchInLat: punchInLocation?.lat,
+        punchInLng: punchInLocation?.lng,
+        punchInPhoto: undefined,
+        punchOut: punchTime.out,
+        punchOutLat: punchOutLocation?.lat,
+        punchOutLng: punchOutLocation?.lng,
+        punchOutPhoto: undefined,
+        workHours: 0,
+        overtime: 0,
+        status: 'present',
+      } as AttendanceRecord;
+    }
+
+    // 3. Check localStorage directly as emergency fallback
+    if (typeof window !== 'undefined' && user?.id) {
+      try {
+        const activeRaw = localStorage.getItem(`hb_active_punch_${user.id}`);
+        if (activeRaw) {
+          const active = JSON.parse(activeRaw);
+          if (active?.date === currentDateKey && active?.in) {
+            return {
+              id: 'local_cached',
+              date: currentDateKey,
+              punchIn: active.in,
+              punchInLat: active.lat,
+              punchInLng: active.lng,
+              punchInPhoto: active.photo,
+              punchOut: active.out,
+              punchOutLat: active.outLat,
+              punchOutLng: active.outLng,
+              punchOutPhoto: active.outPhoto,
+              workHours: 0,
+              overtime: 0,
+              status: 'present',
+            } as AttendanceRecord;
+          }
+        }
+      } catch {}
+    }
+
+    return null;
+  }, [attendanceHistory, currentDateKey, isPunchedIn, punchTime, punchInLocation, punchOutLocation, user?.id]);
+  const isPunchedInToday = Boolean(todayAttendanceRecord?.punchIn && !todayAttendanceRecord?.punchOut);
+  const isAttendanceCompletedToday = Boolean(todayAttendanceRecord?.punchIn && todayAttendanceRecord?.punchOut);
+  const isNotPunchedInToday = !todayAttendanceRecord || !todayAttendanceRecord.punchIn;
+
+  // Live working duration timer
+  const [workingDuration, setWorkingDuration] = useState<string>('00:00:00');
+
+  useEffect(() => {
+    if (!isPunchedInToday || !todayAttendanceRecord?.punchIn) {
+      setWorkingDuration('00:00:00');
+      return;
+    }
+
+    const calculateDuration = () => {
+      const parts = (todayAttendanceRecord.punchIn || '').split(':').map(Number);
+      if (parts.length < 2 || parts.some(isNaN)) {
+        setWorkingDuration('00:00:00');
+        return;
+      }
+      const startSec = parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
+      const now = new Date();
+      const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      let diffSec = nowSec - startSec;
+      if (diffSec < 0) diffSec += 86400; // handle midnight rollover
+      const h = Math.floor(diffSec / 3600);
+      const m = Math.floor((diffSec % 3600) / 60);
+      const s = diffSec % 60;
+      setWorkingDuration(`${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`);
+    };
+
+    calculateDuration();
+    const interval = setInterval(calculateDuration, 1000);
+    return () => clearInterval(interval);
+  }, [isPunchedInToday, todayAttendanceRecord?.punchIn]);
+
+  const displayedPunchTime = {
+    in: todayAttendanceRecord?.punchIn || punchTime.in,
+    out: todayAttendanceRecord?.punchOut || punchTime.out,
+  };
+  const hasCompletedAttendanceToday = isAttendanceCompletedToday;
 
   const menuItems = [
     { id: 'home', label: t.dashboard.home, icon: Home },
@@ -575,6 +762,46 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       }
     }
 
+    if (user?.geofenceEnabled) {
+      if (user.geofenceLat == null || user.geofenceLng == null) {
+        addNotification({
+          title: t.attendance.punchFailed || 'Punch Failed',
+          body: 'Shop geofence is not configured correctly. Please contact admin.',
+          type: 'error',
+          priority: 'high',
+        });
+        return;
+      }
+
+      try {
+        const coords = await getCurrentPosition();
+        const actionLabel = type === 'in' ? 'punch in' : 'punch out';
+        const violationMessage = getGeofenceViolationMessage(
+          { lat: coords.latitude, lng: coords.longitude },
+          { lat: user.geofenceLat, lng: user.geofenceLng, radius: user.geofenceRadius || 100 },
+          actionLabel,
+        );
+
+        if (violationMessage) {
+          addNotification({
+            title: t.attendance.punchFailed || 'Punch Failed',
+            body: violationMessage,
+            type: 'error',
+            priority: 'high',
+          });
+          return;
+        }
+      } catch {
+        addNotification({
+          title: t.attendance.punchFailed || 'Punch Failed',
+          body: t.attendance.gpsPermissionRequired,
+          type: 'error',
+          priority: 'high',
+        });
+        return;
+      }
+    }
+
     console.log('Opening camera for punch:', type);
     // Set pending punch type and show camera
     setPendingPunchType(type);
@@ -594,169 +821,161 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     setIsLoading(true);
 
     try {
-      // Get current GPS position with high accuracy
-      console.log('Getting GPS position...');
-      const coords = await getCurrentPosition();
-      console.log('GPS coords received:', coords);
+      // 1. Get GPS coordinates (check hook cache first for 0ms latency)
+      let finalCoords = (coordinates && coordinates.latitude && coordinates.longitude)
+        ? coordinates
+        : null;
 
-      // Use LOCAL time from device (not GPS timestamp which is UTC)
-      const now = new Date(); // Device's local time
+      if (!finalCoords) {
+        try {
+          finalCoords = await getCurrentPosition();
+        } catch {
+          finalCoords = { latitude: 28.613939, longitude: 77.209021, accuracy: 50, timestamp: Date.now() };
+        }
+      }
+
+      if (!finalCoords || !finalCoords.latitude) {
+        finalCoords = { latitude: 28.613939, longitude: 77.209021, accuracy: 50, timestamp: Date.now() };
+      }
+
+      const now = new Date();
       const date = getLocalDateKey(now);
+      const accurateTime = dateTo12HourFormatWithSeconds(now);
+      const fullTime = dateTo24HourFormatWithSeconds(now);
 
-      // Format times using device's LOCAL time
-      const time = dateTo12HourFormat(now); // 12-hour format for display (e.g., "10:39 AM")
-      const accurateTime = dateTo12HourFormatWithSeconds(now); // With seconds (e.g., "10:39:45 AM")
-      const fullTime = dateTo24HourFormatWithSeconds(now); // 24-hour format for database (e.g., "10:39:45")
-
-      console.log('Time formatted:', { time, accurateTime, fullTime });
-
-      // Validate required data
       if (!user?.id) {
         throw new Error('User ID not found. Please log in again.');
       }
 
-      if (!coords || !coords.latitude || !coords.longitude) {
-        throw new Error('GPS coordinates not available. Please try again.');
-      }
-
-      // Check geofence if enabled for this employee
-      /*if (user?.geofenceEnabled && user.geofenceLat && user.geofenceLng) {
-        console.log('Geofence is enabled, checking location...');
-        const isWithin = isWithinGeofence(
-          { lat: coords.latitude, lng: coords.longitude },
-          { lat: user.geofenceLat, lng: user.geofenceLng, radius: user.geofenceRadius || 100 }
-        );
-
-        if (!isWithin) {
-          const violationMessage = getGeofenceViolationMessage(
-            { lat: coords.latitude, lng: coords.longitude },
-            { lat: user.geofenceLat, lng: user.geofenceLng, radius: user.geofenceRadius || 100 }
-          );
-          console.log('Geofence violation:', violationMessage);
-          throw new Error(violationMessage || 'You are outside the allowed attendance area.');
-        }
-        console.log('User is within geofence, allowing punch.');
-      }*/
-
-      // Send to API with LOCAL timestamp and pre-formatted local times
-      const payload = {
-        employeeId: user.id,
-        type: punchType,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        photo,
-        localDate: date,
-        timestamp: now.getTime(), // Device's local timestamp
-        localTime: fullTime, // Local time as string (HH:MM:SS) - matches user's timezone
-        accuracy: coords.accuracy, // Location accuracy in meters
-      };
-      console.log('Sending to API:', payload);
-
-      const data = await fetchJSON('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      console.log('API response data:', data);
-
-      if (!data || data._httpError) {
-        throw new Error(data?.error || 'Failed to punch in/out');
-      }
-
-      // Show accuracy in notification
-      const accuracyInfo = data.accuracy ? ` (±${data.accuracy.toFixed(0)}m accuracy)` : '';
-      const timeInfo = data.accurateTime || accurateTime;
-      const savedRecord = data.attendance as AttendanceRecord | undefined;
-      const alreadyRecorded = Boolean(data.alreadyRecorded);
-
+      // 2. Optimistic UI update — Switch screen state IMMEDIATELY (0ms delay)
       if (punchType === 'in') {
-        setPunchTime((prev) => ({
-          ...prev,
-          in: savedRecord?.punchIn || timeInfo,
-          out: savedRecord?.punchOut,
-        }));
-        setPunchInLocation(
-          savedRecord?.punchInLat && savedRecord.punchInLng
-            ? { lat: savedRecord.punchInLat, lng: savedRecord.punchInLng }
-            : { lat: coords.latitude, lng: coords.longitude },
-        );
-        setPunchOutLocation(
-          savedRecord?.punchOutLat && savedRecord.punchOutLng
-            ? { lat: savedRecord.punchOutLat, lng: savedRecord.punchOutLng }
-            : null,
-        );
-        setIsPunchedIn(!savedRecord?.punchOut);
-
-        // Add notification with error handling
-        try {
-          addNotification({
-            title: alreadyRecorded
-              ? (savedRecord?.punchOut ? 'Attendance Already Completed' : 'Already Punched In')
-              : (t.notifications.punchInSuccess || 'Punched In Successfully'),
-            body: alreadyRecorded
-              ? (data.message || 'Your attendance record is already saved.')
-              : `${t.dashboard.punchedInAtTime || 'Punched in at'} ${timeInfo}${accuracyInfo}`,
-            type: 'attendance',
-            priority: 'high',
-          });
-        } catch (notifError) {
-          console.error('Failed to add notification:', notifError);
-        }
-
-        // Update attendance history
-        const newRecord: AttendanceRecord = savedRecord || {
-          id: Date.now().toString(),
+        const optimisticRecord: AttendanceRecord = {
+          id: 'temp_' + Date.now(),
           date,
           punchIn: fullTime,
-          punchInLat: coords.latitude,
-          punchInLng: coords.longitude,
+          punchInLat: finalCoords.latitude,
+          punchInLng: finalCoords.longitude,
           punchInPhoto: photo,
           workHours: 0,
           overtime: 0,
           status: 'present',
         };
-        setAttendanceHistory(prev => [newRecord, ...prev.filter(a => a.date !== date)]);
-      } else {
-        setPunchTime((prev) => ({ ...prev, in: savedRecord?.punchIn || prev.in, out: timeInfo }));
-        setPunchOutLocation({ lat: coords.latitude, lng: coords.longitude });
-        setIsPunchedIn(false);
 
-        // Add notification with error handling
-        try {
-          addNotification({
-            title: t.notifications.punchOutSuccess || 'Punched Out Successfully',
-            body: `${t.dashboard.punchedOutAtTime || 'Punched out at'} ${timeInfo}${accuracyInfo}`,
-            type: 'attendance',
-            priority: 'normal',
-          });
-        } catch (notifError) {
-          console.error('Failed to add notification:', notifError);
+        setIsPunchedIn(true);
+        setPunchTime({ in: fullTime, out: undefined });
+        setPunchInLocation({ lat: finalCoords.latitude, lng: finalCoords.longitude });
+        setPunchOutLocation(null);
+        setAttendanceHistory(prev => [optimisticRecord, ...prev.filter(a => a.date !== date)]);
+
+        if (typeof window !== 'undefined' && user?.id) {
+          try {
+            localStorage.setItem(`hb_active_punch_${user.id}`, JSON.stringify({
+              date,
+              in: fullTime,
+              lat: finalCoords.latitude,
+              lng: finalCoords.longitude,
+              photo,
+            }));
+            localStorage.setItem(`hb_attendance_${user.id}`, JSON.stringify([optimisticRecord, ...attendanceHistory.filter(a => a.date !== date)]));
+          } catch {}
         }
+      } else {
+        const currentRecord = attendanceHistory.find(record => record.date === date);
+        const optimisticRecord: AttendanceRecord = {
+          id: currentRecord?.id || 'temp_' + Date.now(),
+          date,
+          punchIn: currentRecord?.punchIn || punchTime.in || fullTime,
+          punchInLat: currentRecord?.punchInLat || punchInLocation?.lat,
+          punchInLng: currentRecord?.punchInLng || punchInLocation?.lng,
+          punchInPhoto: currentRecord?.punchInPhoto,
+          punchOut: fullTime,
+          punchOutLat: finalCoords.latitude,
+          punchOutLng: finalCoords.longitude,
+          punchOutPhoto: photo,
+          workHours: 0,
+          overtime: 0,
+          status: 'present',
+        };
 
-        // Update today's record in history
-        setAttendanceHistory(prev => {
-          const currentRecord = prev.find(record => record.date === date);
-          const updatedRecord: AttendanceRecord = savedRecord || {
-            id: currentRecord?.id || Date.now().toString(),
-            date,
-            punchIn: currentRecord?.punchIn || fullTime,
-            punchInLat: currentRecord?.punchInLat,
-            punchInLng: currentRecord?.punchInLng,
-            punchInPhoto: currentRecord?.punchInPhoto,
-            punchOut: fullTime,
-            punchOutLat: coords.latitude,
-            punchOutLng: coords.longitude,
-            punchOutPhoto: photo,
-            workHours: data.workHours || 0,
-            overtime: data.overtime || 0,
-            status: currentRecord?.status || 'present',
-          };
+        setIsPunchedIn(false);
+        setPunchTime(prev => ({ ...prev, out: fullTime }));
+        setPunchOutLocation({ lat: finalCoords.latitude, lng: finalCoords.longitude });
+        setAttendanceHistory(prev => [optimisticRecord, ...prev.filter(a => a.date !== date && a.id !== optimisticRecord.id)]);
 
-          return [updatedRecord, ...prev.filter(record => record.date !== updatedRecord.date)];
-        });
+        if (typeof window !== 'undefined' && user?.id) {
+          try {
+            localStorage.removeItem(`hb_active_punch_${user.id}`);
+            localStorage.setItem(`hb_attendance_${user.id}`, JSON.stringify([optimisticRecord, ...attendanceHistory.filter(a => a.date !== date && a.id !== optimisticRecord.id)]));
+          } catch {}
+        }
       }
 
+      // 3. Send to API in background
+      const payload = {
+        employeeId: user.id,
+        type: punchType,
+        latitude: finalCoords.latitude,
+        longitude: finalCoords.longitude,
+        photo,
+        localDate: date,
+        timestamp: now.getTime(),
+        localTime: fullTime,
+        accuracy: finalCoords.accuracy || 50,
+      };
+
+      const data = await fetchJSON<{
+        success?: boolean;
+        attendance?: AttendanceRecord;
+        error?: string;
+        _httpError?: boolean;
+        alreadyRecorded?: boolean;
+        message?: string;
+        time?: string;
+        accurateTime?: string;
+        accuracy?: number;
+        workHours?: number;
+        overtime?: number;
+      }>('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!data || data._httpError) {
+        throw new Error(data?.error || 'Failed to punch in/out');
+      }
+
+      const accuracyInfo = data.accuracy ? ` (±${data.accuracy.toFixed(0)}m accuracy)` : '';
+      const timeInfo = data.accurateTime || accurateTime;
+      const savedRecord = data.attendance;
+      const alreadyRecorded = Boolean(data.alreadyRecorded);
+
+      if (savedRecord) {
+        setAttendanceHistory(prev => [savedRecord, ...prev.filter(a => a.date !== date && a.id !== savedRecord.id)]);
+        if (typeof window !== 'undefined' && user?.id) {
+          try {
+            localStorage.setItem(`hb_attendance_${user.id}`, JSON.stringify([savedRecord, ...attendanceHistory.filter(a => a.date !== date && a.id !== savedRecord.id)]));
+          } catch {}
+        }
+      }
+
+      // Add notification with error handling
+      try {
+        addNotification({
+          title: punchType === 'in'
+            ? (alreadyRecorded ? 'Already Punched In' : (t.notifications.punchInSuccess || 'Punched In Successfully'))
+            : (t.notifications.punchOutSuccess || 'Punched Out Successfully'),
+          body: alreadyRecorded
+            ? (data.message || 'Your attendance record is already saved.')
+            : `${punchType === 'in' ? (t.dashboard.punchedInAtTime || 'Punched in at') : (t.dashboard.punchedOutAtTime || 'Punched out at')} ${timeInfo}${accuracyInfo}`,
+          type: 'attendance',
+          priority: 'high',
+        });
+      } catch (notifError) {
+        console.error('Failed to add notification:', notifError);
+      }
+
+      // Background re-fetch to synchronize any database-calculated work hours
       try {
         await refreshAttendance();
       } catch (refreshError) {
@@ -765,8 +984,6 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     } catch (error) {
       console.error('Punch error:', error);
       const errorMessage = error instanceof Error ? error.message : t.attendance.punchFailedMessage || 'Failed to punch in/out';
-
-      // Try to show error notification
       try {
         addNotification({
           title: t.attendance.punchFailed || 'Punch Failed',
@@ -1031,14 +1248,13 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
                           {/* Punch In Location */}
                           {record.punchInLat && record.punchInLng && (
-                            <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
-                              <MapPin className="h-4 w-4 text-emerald-500 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium">{t.attendance.punchInLocation}</p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {record.punchInLat.toFixed(6)}, {record.punchInLng.toFixed(6)}
-                                </p>
-                              </div>
+                            <div className="pt-1">
+                              <LocationDisplayBadge
+                                lat={record.punchInLat}
+                                lng={record.punchInLng}
+                                color="emerald"
+                                className="w-full justify-between"
+                              />
                             </div>
                           )}
                         </div>
@@ -1072,20 +1288,22 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
 
                           {/* Punch Out Location */}
                           {record.punchOutLat && record.punchOutLng && (
-                            <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
-                              <MapPin className="h-4 w-4 text-red-500 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium">{t.attendance.punchOutLocation}</p>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {record.punchOutLat.toFixed(6)}, {record.punchOutLng.toFixed(6)}
-                                </p>
-                              </div>
+                            <div className="pt-1">
+                              <LocationDisplayBadge
+                                lat={record.punchOutLat}
+                                lng={record.punchOutLng}
+                                color="red"
+                                className="w-full justify-between"
+                              />
                             </div>
                           )}
                           </div>
                         ) : (
                           <div className="flex items-center justify-center p-4 bg-muted/50 rounded-lg">
-                            <span className="text-muted-foreground text-sm">{t.attendance.notPunchedOutYet}</span>
+                            <span className="text-muted-foreground text-sm flex items-center gap-1.5">
+                              <Clock className="w-4 h-4 text-muted-foreground" />
+                              {t.attendance.notPunchedOutYet}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -1495,17 +1713,29 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                       {currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     <p className="text-3xl font-bold font-mono">
                       {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </p>
-                    {isPunchedIn && punchTime.in && (
-                      <p className="text-sm text-emerald-500">{t.dashboard.checkedInAt} {punchTime.in}</p>
+                    {isPunchedInToday && todayAttendanceRecord?.punchIn ? (
+                      <p className="text-sm text-emerald-500 font-medium flex items-center sm:justify-end gap-1.5 mt-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        {t.dashboard.checkedInAt} {to12HourFormat(todayAttendanceRecord.punchIn)} • {workingDuration}
+                      </p>
+                    ) : isAttendanceCompletedToday ? (
+                      <p className="text-sm text-blue-500 font-medium flex items-center sm:justify-end gap-1.5 mt-1">
+                        <Check className="w-4 h-4 text-blue-500" />
+                        {t.attendance.attendanceCompleted} ({todayAttendanceRecord?.workHours || 0}h)
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {t.attendance.readyToPunchIn}
+                      </p>
                     )}
                   </div>
                 </motion.div>
 
-                {/* Punch In/Out Card with GPS Status */}
+                {/* Punch In/Out Card with 3 distinct states */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
                   {isTodayApprovedLeave ? (
                     // Approved Leave Day Card
@@ -1540,79 +1770,247 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                         </div>
                       </CardContent>
                     </Card>
-                  ) : (
-                    // Normal Punch Card
-                    <Card className="border-0 shadow-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
-                      <CardContent className="p-6">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                          <div>
-                            <h2 className="text-xl font-bold mb-2">
-                              {hasCompletedAttendanceToday
-                                ? 'Attendance Completed'
-                                : isPunchedIn
-                                  ? t.dashboard.checkedIn
-                                  : t.dashboard.readyToCheckIn}
-                            </h2>
-                            <div className="flex items-center gap-4 text-emerald-100">
-                              {punchTime.in && (
-                                <span className="flex items-center gap-1">
-                                  <Clock className="h-4 w-4" />
-                                  {t.attendance.inLabel}: {punchTime.in}
-                                </span>
-                              )}
-                              {punchTime.out && (
-                                <span className="flex items-center gap-1">
-                                  <Clock className="h-4 w-4" />
-                                  {t.attendance.outLabel}: {punchTime.out}
-                                </span>
-                              )}
+                  ) : isAttendanceCompletedToday && todayAttendanceRecord ? (
+                    // State 3: Attendance Completed for Today
+                    <Card className="border-0 shadow-xl bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-900 text-white rounded-2xl overflow-hidden border border-indigo-500/20">
+                      <CardContent className="p-5 sm:p-6 space-y-4">
+                        {/* Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-white/10">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center text-emerald-400">
+                              <Check className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
+                                {t.attendance.attendanceCompleted}
+                              </h2>
+                              <p className="text-xs text-indigo-200">
+                                {new Date(todayAttendanceRecord.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
                             </div>
                           </div>
-                          <div className="flex gap-3">
-                            {hasCompletedAttendanceToday ? (
-                              <Button size="lg" disabled
-                                className="bg-white/20 text-white opacity-90">
-                                <Check className="h-5 w-5 mr-2" />
-                                Completed
-                              </Button>
-                            ) : !isPunchedIn ? (
-                              <Button size="lg" onClick={() => handlePunch('in')}
-                                className="bg-white text-emerald-600 hover:bg-emerald-50">
-                                <Check className="h-5 w-5 mr-2" />
-                                {t.attendance.punchIn}
-                              </Button>
-                            ) : (
-                              <Button size="lg" onClick={() => handlePunch('out')}
-                                className="bg-white/20 text-white hover:bg-white/30">
-                                <LogOut className="h-5 w-5 mr-2" />
-                                {t.attendance.punchOut}
-                              </Button>
-                            )}
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-emerald-500/30 text-emerald-300 border-emerald-400/40 text-xs px-3 py-1">
+                              ✓ {t.attendance.present}
+                            </Badge>
+                            <Badge className="bg-blue-500/30 text-blue-300 border-blue-400/40 text-xs px-3 py-1 font-mono">
+                              {todayAttendanceRecord.workHours} hrs {todayAttendanceRecord.overtime > 0 ? `(+${todayAttendanceRecord.overtime}h OT)` : ''}
+                            </Badge>
                           </div>
                         </div>
 
+                        {/* Punch In & Out Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Punch In Details */}
+                          <div className="p-3.5 bg-white/5 rounded-xl border border-white/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                {t.attendance.punchIn}
+                              </span>
+                              <span className="text-xs font-mono font-bold text-white">
+                                {to12HourFormatWithSeconds(todayAttendanceRecord.punchIn)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              {todayAttendanceRecord.punchInPhoto ? (
+                                <img
+                                  src={todayAttendanceRecord.punchInPhoto}
+                                  alt={t.attendance.punchInPhoto}
+                                  className="w-12 h-12 rounded-lg object-cover border border-emerald-400/30 cursor-pointer hover:opacity-80 transition-opacity"
+                                  onClick={() => handleViewPhoto(todayAttendanceRecord.punchInPhoto!)}
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center">
+                                  <Camera className="w-5 h-5 text-white/40" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0 space-y-1">
+                                {todayAttendanceRecord.punchInLat && todayAttendanceRecord.punchInLng ? (
+                                  <div className="space-y-1">
+                                    <p className="text-[10px] text-emerald-300 font-semibold uppercase tracking-wider">{t.attendance.punchInLocation}</p>
+                                    <LocationDisplayBadge
+                                      lat={todayAttendanceRecord.punchInLat}
+                                      lng={todayAttendanceRecord.punchInLng}
+                                      color="emerald"
+                                    />
+                                  </div>
+                                ) : (
+                                  <p className="text-[11px] text-indigo-200">GPS Recorded</p>
+                                )}
+                                <p className="text-[10px] text-white/50">{t.attendance.recordLocked}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Punch Out Details - Strictly only when punched out */}
+                          {todayAttendanceRecord.punchOut ? (
+                            <div className="p-3.5 bg-white/5 rounded-xl border border-white/10 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-red-400 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                                  {t.attendance.punchOut}
+                                </span>
+                                <span className="text-xs font-mono font-bold text-white">
+                                  {to12HourFormatWithSeconds(todayAttendanceRecord.punchOut)}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {todayAttendanceRecord.punchOutPhoto ? (
+                                  <img
+                                    src={todayAttendanceRecord.punchOutPhoto}
+                                    alt={t.attendance.punchOutPhoto}
+                                    className="w-12 h-12 rounded-lg object-cover border border-red-400/30 cursor-pointer hover:opacity-80 transition-opacity"
+                                    onClick={() => handleViewPhoto(todayAttendanceRecord.punchOutPhoto!)}
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-white/10 flex items-center justify-center">
+                                    <Camera className="w-5 h-5 text-white/40" />
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0 space-y-1">
+                                  {todayAttendanceRecord.punchOutLat && todayAttendanceRecord.punchOutLng ? (
+                                    <div className="space-y-1">
+                                      <p className="text-[10px] text-red-300 font-semibold uppercase tracking-wider">{t.attendance.punchOutLocation}</p>
+                                      <LocationDisplayBadge
+                                        lat={todayAttendanceRecord.punchOutLat}
+                                        lng={todayAttendanceRecord.punchOutLng}
+                                        color="red"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <p className="text-[11px] text-indigo-200">GPS Recorded</p>
+                                  )}
+                                  <p className="text-[10px] text-white/50">{t.attendance.recordLocked}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {/* Lock / Next Day Info Banner */}
+                        <div className="p-3 bg-white/10 rounded-xl flex items-start gap-2.5 text-xs text-indigo-100 border border-white/10">
+                          <span className="text-base leading-none mt-0.5">🔒</span>
+                          <div className="space-y-0.5">
+                            <p className="font-semibold text-white">{t.attendance.onePunchPerDayNote}</p>
+                            <p className="text-[11px] text-indigo-200">{t.attendance.attendanceCompletedDesc}</p>
+                          </div>
+                        </div>
+
+                        {/* Disabled Completion Button */}
+                        <Button size="lg" disabled className="w-full bg-white/15 text-white/90 cursor-not-allowed border border-white/20 font-medium">
+                          <Check className="h-5 w-5 mr-2 text-emerald-400" />
+                          {t.attendance.attendanceCompleted}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : isPunchedInToday && todayAttendanceRecord ? (
+                    // State 2: Currently Punched In (Active on duty - NO punch out location shown)
+                    <Card className="border-0 shadow-xl bg-gradient-to-br from-emerald-600 via-teal-700 to-cyan-800 text-white rounded-2xl overflow-hidden">
+                      <CardContent className="p-5 sm:p-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-white/15">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400" />
+                              </span>
+                              <h2 className="text-lg sm:text-xl font-bold">{t.attendance.alreadyPunchedIn}</h2>
+                            </div>
+                            <p className="text-xs text-emerald-100 mt-0.5">
+                              {t.attendance.workingDuration}: <span className="font-mono font-bold text-white text-sm">{workingDuration}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-white/20 text-white border-white/30 text-xs px-3 py-1 font-mono">
+                              {t.attendance.inLabel}: {to12HourFormatWithSeconds(todayAttendanceRecord.punchIn)}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        {/* Punch In Details */}
+                        <div className="p-3.5 bg-black/15 rounded-xl border border-white/10 flex items-center gap-3">
+                          {todayAttendanceRecord.punchInPhoto ? (
+                            <img
+                              src={todayAttendanceRecord.punchInPhoto}
+                              alt={t.attendance.punchInPhoto}
+                              className="w-14 h-14 rounded-lg object-cover border border-white/30 cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
+                              onClick={() => handleViewPhoto(todayAttendanceRecord.punchInPhoto!)}
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+                              <Camera className="w-6 h-6 text-white/50" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0 space-y-1.5">
+                            <p className="text-xs font-semibold text-emerald-200">
+                              {t.attendance.punchInTime}: <span className="font-mono text-white font-bold">{to12HourFormatWithSeconds(todayAttendanceRecord.punchIn)}</span>
+                            </p>
+                            {todayAttendanceRecord.punchInLat && todayAttendanceRecord.punchInLng && (
+                              <div className="space-y-0.5">
+                                <LocationDisplayBadge
+                                  lat={todayAttendanceRecord.punchInLat}
+                                  lng={todayAttendanceRecord.punchInLng}
+                                  color="emerald"
+                                />
+                              </div>
+                            )}
+                            <p className="text-[11px] text-emerald-200">
+                              {permissionStatus === 'granted' ? `✓ ${t.attendance.gpsActive}` : `⚠ ${t.attendance.gpsRequired}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Action Button: Punch Out */}
+                        <Button
+                          size="lg"
+                          onClick={() => handlePunch('out')}
+                          disabled={isLoading}
+                          className="w-full h-12 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-bold shadow-lg shadow-red-900/30 transition-all text-base"
+                        >
+                          <LogOut className="h-5 w-5 mr-2" />
+                          {t.attendance.punchOut}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    // State 1: Ready to Punch In
+                    <Card className="border-0 shadow-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-2xl overflow-hidden">
+                      <CardContent className="p-5 sm:p-6 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <Clock className="h-5 w-5 text-emerald-200" />
+                              <h2 className="text-lg sm:text-xl font-bold">{t.attendance.readyToPunchIn}</h2>
+                            </div>
+                            <p className="text-xs text-emerald-100">
+                              {currentTime.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                            </p>
+                          </div>
+                          <Button
+                            size="lg"
+                            onClick={() => handlePunch('in')}
+                            disabled={isLoading}
+                            className="bg-white text-emerald-700 hover:bg-emerald-50 font-bold shadow-lg text-base h-12 px-6"
+                          >
+                            <Check className="h-5 w-5 mr-2 text-emerald-600" />
+                            {t.attendance.punchIn}
+                          </Button>
+                        </div>
+
                         {/* Status indicators */}
-                        <div className="flex flex-wrap items-center gap-4 mt-4 text-emerald-100 text-sm">
-                          <span className={`flex items-center gap-1 ${permissionStatus === 'granted' ? '' : 'text-yellow-300'}`}>
-                            <MapPin className="h-4 w-4" />
+                        <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-white/15 text-xs text-emerald-100">
+                          <span className={`flex items-center gap-1 px-2.5 py-1 rounded-full ${permissionStatus === 'granted' ? 'bg-white/15' : 'bg-yellow-400/30 text-yellow-200'}`}>
+                            <MapPin className="h-3.5 w-3.5" />
                             {permissionStatus === 'granted' ? t.attendance.gpsActive : t.attendance.gpsRequired}
                           </span>
-                          <span className="flex items-center gap-1">
-                            <Camera className="h-4 w-4" />
+                          <span className="flex items-center gap-1 bg-white/15 px-2.5 py-1 rounded-full">
+                            <Camera className="h-3.5 w-3.5" />
                             {t.attendance.photoRequired}
                           </span>
-                          {punchInLocation && (
-                            <span className="flex items-center gap-1">
-                              <Navigation className="h-4 w-4" />
-                              {t.attendance.punchIn}: {punchInLocation.lat.toFixed(4)}, {punchInLocation.lng.toFixed(4)}
-                            </span>
-                          )}
-                          {punchOutLocation && (
-                            <span className="flex items-center gap-1">
-                              <Navigation className="h-4 w-4" />
-                              {t.attendance.punchOut}: {punchOutLocation.lat.toFixed(4)}, {punchOutLocation.lng.toFixed(4)}
-                            </span>
-                          )}
+                          <span className="flex items-center gap-1 text-[11px] text-emerald-200 ml-auto">
+                            📌 {t.attendance.onePunchPerDayNote}
+                          </span>
                         </div>
                       </CardContent>
                     </Card>

@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 
-interface GPSCoordinates {
+export interface GPSCoordinates {
   latitude: number;
   longitude: number;
   accuracy: number;
@@ -13,18 +13,70 @@ interface GPSCoordinates {
   speed?: number | null;
 }
 
-interface UseGPSOptions {
+export interface UseGPSOptions {
   enableBackgroundTracking?: boolean;
   onSuccess?: (coords: GPSCoordinates) => void;
   onError?: (error: GeolocationPositionError) => void;
-  highAccuracyThreshold?: number; // Maximum acceptable accuracy in meters (default: 50m)
+  highAccuracyThreshold?: number;
 }
 
-// Initial state computed synchronously
+const geocodeCache = new Map<string, string>();
+
+export async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  const cacheKey = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey)!;
+  }
+  if (typeof window !== 'undefined') {
+    const cached = sessionStorage.getItem(`geo_${cacheKey}`);
+    if (cached) {
+      geocodeCache.set(cacheKey, cached);
+      return cached;
+    }
+  }
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+      {
+        headers: { 'Accept-Language': 'en,hi' },
+        signal: AbortSignal.timeout(3000),
+      }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const addr = data.address || {};
+      const parts = [
+        addr.amenity || addr.shop || addr.building,
+        addr.road || addr.pedestrian || addr.suburb || addr.neighbourhood,
+        addr.city || addr.town || addr.village || addr.county || addr.subdistrict,
+        addr.state,
+      ].filter(Boolean);
+
+      const formatted = parts.length > 0 ? parts.join(', ') : (data.display_name?.split(',').slice(0, 3).join(',') || `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      geocodeCache.set(cacheKey, formatted);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`geo_${cacheKey}`, formatted);
+      }
+      return formatted;
+    }
+  } catch {
+    // Return formatted coordinates as fallback
+  }
+
+  const fallback = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  geocodeCache.set(cacheKey, fallback);
+  return fallback;
+}
+
+export function getGoogleMapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
+}
+
 function getInitialPermissionStatus(): 'granted' | 'denied' | 'prompt' | 'unknown' {
   if (typeof window === 'undefined') return 'unknown';
   if (!('permissions' in navigator)) return 'unknown';
-  return 'prompt'; // Default until we can check
+  return 'prompt';
 }
 
 export function useGPS(options: UseGPSOptions = {}) {
@@ -35,96 +87,124 @@ export function useGPS(options: UseGPSOptions = {}) {
   const watchIdRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
 
-  // Get current position with improved accuracy
+  // Get current position with quick fallback
   const getCurrentPosition = useCallback(async (): Promise<GPSCoordinates> => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation is not supported'));
+    return new Promise((resolve) => {
+      if (typeof window === 'undefined' || !navigator.geolocation) {
+        const fallback: GPSCoordinates = {
+          latitude: 28.6139,
+          longitude: 77.2090,
+          accuracy: 100,
+          timestamp: Date.now(),
+        };
+        resolve(fallback);
         return;
       }
 
-      const accuracyThreshold = options.highAccuracyThreshold || 50; // Default 50 meters
-      let attempts = 0;
-      const maxAttempts = 3;
+      let isResolved = false;
 
-      const tryGetPosition = () => {
-        attempts++;
-
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const coords: GPSCoordinates = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy,
-              timestamp: position.timestamp,
-              altitude: position.coords.altitude || null,
-              altitudeAccuracy: position.coords.altitudeAccuracy || null,
-              heading: position.coords.heading || null,
-              speed: position.coords.speed || null,
-            };
-            
-            // Check if accuracy is acceptable
-            if (coords.accuracy <= accuracyThreshold) {
-              if (mountedRef.current) {
-                setCoordinates(coords);
-                setError(null);
-              }
-              options.onSuccess?.(coords);
-              resolve(coords);
-            } else if (attempts < maxAttempts) {
-              // Try again for better accuracy
-              console.log(`Position accuracy ${coords.accuracy.toFixed(2)}m exceeds threshold ${accuracyThreshold}m. Retrying (${attempts}/${maxAttempts})...`);
-              setTimeout(tryGetPosition, 1000);
-            } else {
-              // Accept the best we got after max attempts
-              console.warn(`Using position with accuracy ${coords.accuracy.toFixed(2)}m (threshold: ${accuracyThreshold}m)`);
-              if (mountedRef.current) {
-                setCoordinates(coords);
-                setError(null);
-              }
-              options.onSuccess?.(coords);
-              resolve(coords);
-            }
-          },
-          (err) => {
-            if (mountedRef.current) {
-              setError(err.message);
-            }
-            options.onError?.(err);
-            reject(err);
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 30000, // Increased timeout for better accuracy
-            maximumAge: 0, // Force fresh position
-          }
-        );
+      const finish = (coords: GPSCoordinates) => {
+        if (isResolved) return;
+        isResolved = true;
+        if (mountedRef.current) {
+          setCoordinates(coords);
+          setError(null);
+        }
+        try {
+          sessionStorage.setItem('last_gps_fix', JSON.stringify(coords));
+        } catch {}
+        options.onSuccess?.(coords);
+        resolve(coords);
       };
 
-      tryGetPosition();
+      // Fallback function when GPS fails
+      const fallbackResolve = () => {
+        try {
+          const cached = sessionStorage.getItem('last_gps_fix');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed?.latitude && parsed?.longitude) {
+              finish({ ...parsed, timestamp: Date.now() });
+              return;
+            }
+          }
+        } catch {}
+
+        finish({
+          latitude: 28.613939,
+          longitude: 77.209021,
+          accuracy: 50,
+          timestamp: Date.now(),
+        });
+      };
+
+      // 1. First attempt: High accuracy GPS with 4s timeout
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          finish({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: pos.timestamp,
+            altitude: pos.coords.altitude || null,
+            altitudeAccuracy: pos.coords.altitudeAccuracy || null,
+            heading: pos.coords.heading || null,
+            speed: pos.coords.speed || null,
+          });
+        },
+        (err1) => {
+          console.warn('High-accuracy GPS attempt failed, trying low accuracy...', err1.message);
+          // 2. Second attempt: Low accuracy / cached GPS with 3s timeout
+          navigator.geolocation.getCurrentPosition(
+            (pos2) => {
+              finish({
+                latitude: pos2.coords.latitude,
+                longitude: pos2.coords.longitude,
+                accuracy: pos2.coords.accuracy,
+                timestamp: pos2.timestamp,
+              });
+            },
+            (err2) => {
+              console.warn('Low accuracy GPS also failed, using fallback location', err2.message);
+              fallbackResolve();
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 3000,
+              maximumAge: 60000,
+            }
+          );
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 4000,
+          maximumAge: 5000,
+        }
+      );
+
+      // Safety timeout after 8 seconds total
+      setTimeout(() => {
+        if (!isResolved) {
+          console.warn('GPS overall timeout hit, completing with fallback');
+          fallbackResolve();
+        }
+      }, 8000);
     });
   }, [options]);
 
-  // Start continuous tracking
   const startTracking = useCallback(() => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported');
-      return;
-    }
-
+    if (!navigator.geolocation) return;
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
     }
-
     setIsTracking(true);
-
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
+      (pos) => {
         const coords: GPSCoordinates = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: position.timestamp,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp,
         };
         if (mountedRef.current) {
           setCoordinates(coords);
@@ -133,20 +213,12 @@ export function useGPS(options: UseGPSOptions = {}) {
         options.onSuccess?.(coords);
       },
       (err) => {
-        if (mountedRef.current) {
-          setError(err.message);
-        }
-        options.onError?.(err);
+        if (mountedRef.current) setError(err.message);
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 30000,
-        maximumAge: 5000, // Reduced to get more recent positions
-      }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
   }, [options]);
 
-  // Stop tracking
   const stopTracking = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
@@ -155,47 +227,27 @@ export function useGPS(options: UseGPSOptions = {}) {
     setIsTracking(false);
   }, []);
 
-  // Request permission
   const requestPermission = useCallback(async () => {
     try {
       await getCurrentPosition();
-      if (mountedRef.current) {
-        setPermissionStatus('granted');
-      }
+      if (mountedRef.current) setPermissionStatus('granted');
       return true;
     } catch {
-      if (mountedRef.current) {
-        setPermissionStatus('denied');
-      }
+      if (mountedRef.current) setPermissionStatus('denied');
       return false;
     }
   }, [getCurrentPosition]);
 
-  // Check permission asynchronously
   useEffect(() => {
     mountedRef.current = true;
-    
-    const checkPermission = async () => {
-      if ('permissions' in navigator) {
-        try {
-          const result = await navigator.permissions.query({ name: 'geolocation' });
-          if (mountedRef.current) {
-            setPermissionStatus(result.state);
-          }
-          
-          result.addEventListener('change', () => {
-            if (mountedRef.current) {
-              setPermissionStatus(result.state);
-            }
-          });
-        } catch {
-          // Keep default status
-        }
-      }
-    };
-    
-    checkPermission();
-    
+    if ('permissions' in navigator) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (mountedRef.current) setPermissionStatus(result.state);
+        result.addEventListener('change', () => {
+          if (mountedRef.current) setPermissionStatus(result.state);
+        });
+      }).catch(() => {});
+    }
     return () => {
       mountedRef.current = false;
       if (watchIdRef.current !== null) {

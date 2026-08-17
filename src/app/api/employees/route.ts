@@ -2,6 +2,60 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+
+function noStoreJson(body: unknown, init?: ResponseInit) {
+  const headers = new Headers(init?.headers);
+  headers.set('Cache-Control', 'no-store');
+
+  return NextResponse.json(body, {
+    ...init,
+    headers,
+  });
+}
+
+function normalizeGeofenceInput(
+  enabledValue: unknown,
+  latValue: unknown,
+  lngValue: unknown,
+  radiusValue: unknown,
+) {
+  const enabled = enabledValue === true || enabledValue === 'true';
+
+  if (!enabled) {
+    return {
+      geofenceEnabled: false,
+      geofenceLat: null,
+      geofenceLng: null,
+      geofenceRadius: null,
+    };
+  }
+
+  const latText = latValue == null ? '' : String(latValue).trim();
+  const lngText = lngValue == null ? '' : String(lngValue).trim();
+  const radiusText = radiusValue == null ? '' : String(radiusValue).trim();
+  const lat = Number(latText);
+  const lng = Number(lngText);
+  const radius = radiusText ? Number(radiusText) : 100;
+
+  if (!latText || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+    return { error: 'Valid geofence latitude is required when geofence is enabled.' };
+  }
+  if (!lngText || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+    return { error: 'Valid geofence longitude is required when geofence is enabled.' };
+  }
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return { error: 'Valid geofence radius is required when geofence is enabled.' };
+  }
+
+  return {
+    geofenceEnabled: true,
+    geofenceLat: lat,
+    geofenceLng: lng,
+    geofenceRadius: radius,
+  };
+}
+
 // GET /api/employees - Get employees by admin or check by phone/userId
 export async function GET(request: NextRequest) {
   const adminId = request.nextUrl.searchParams.get('adminId');
@@ -24,10 +78,10 @@ export async function GET(request: NextRequest) {
       });
 
       if (!employee) {
-        return NextResponse.json({ exists: false });
+        return noStoreJson({ exists: false });
       }
 
-      return NextResponse.json({
+      return noStoreJson({
         exists: true,
         employee: {
           id: employee.id,
@@ -44,6 +98,10 @@ export async function GET(request: NextRequest) {
           organizationLogo: employee.organization?.logo || null,
           profilePhoto: employee.profilePhoto,
           active: employee.active,
+          geofenceEnabled: employee.geofenceEnabled,
+          geofenceLat: employee.geofenceLat,
+          geofenceLng: employee.geofenceLng,
+          geofenceRadius: employee.geofenceRadius,
           shifts: employee.shifts,
         },
       });
@@ -62,10 +120,10 @@ export async function GET(request: NextRequest) {
       });
 
       if (!employee) {
-        return NextResponse.json({ exists: false });
+        return noStoreJson({ exists: false });
       }
 
-      return NextResponse.json({
+      return noStoreJson({
         exists: true,
         employee: {
           id: employee.id,
@@ -81,6 +139,10 @@ export async function GET(request: NextRequest) {
           organizationLogo: employee.organization?.logo || null,
           profilePhoto: employee.profilePhoto,
           active: employee.active,
+          geofenceEnabled: employee.geofenceEnabled,
+          geofenceLat: employee.geofenceLat,
+          geofenceLng: employee.geofenceLng,
+          geofenceRadius: employee.geofenceRadius,
         },
       });
     } catch (error) {
@@ -106,7 +168,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
       }
 
-      return NextResponse.json({ employee });
+      return noStoreJson({ employee });
     } catch (error) {
       console.error('Error fetching employee:', error);
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -130,7 +192,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({ employees });
+    return noStoreJson({ employees });
   } catch (error) {
     console.error('Error fetching employees:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -209,6 +271,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Organization not found. Please contact support.' }, { status: 400 });
     }
 
+    const geofencePayload = normalizeGeofenceInput(
+      geofenceEnabled,
+      geofenceLat,
+      geofenceLng,
+      geofenceRadius,
+    );
+    if ('error' in geofencePayload) {
+      return NextResponse.json({ error: geofencePayload.error }, { status: 400 });
+    }
+
     // Hash password and security password
     const hashedPassword = await bcrypt.hash(password, 10);
     const hashedSecurityPassword = await bcrypt.hash(securityPassword, 10);
@@ -238,10 +310,7 @@ export async function POST(request: NextRequest) {
         biometricEnabled: false,
         active: true,
         starOfMonth: false,
-        geofenceEnabled: geofenceEnabled || false,
-        geofenceLat: geofenceLat || null,
-        geofenceLng: geofenceLng || null,
-        geofenceRadius: geofenceRadius || 100,
+        ...geofencePayload,
         shifts: shiftIds && shiftIds.length > 0 ? {
           create: shiftIds.map((shiftId: string) => ({
             shiftId,
@@ -256,7 +325,7 @@ export async function POST(request: NextRequest) {
     });
 
     console.log('Employee created successfully:', employee.id, employee.name);
-    return NextResponse.json({ success: true, employee });
+    return noStoreJson({ success: true, employee });
   } catch (error) {
     console.error('Error creating employee:', error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
@@ -292,11 +361,26 @@ export async function PUT(request: NextRequest) {
       active: data.active,
       starOfMonth: data.starOfMonth,
       profilePhoto: data.profilePhoto,
-      geofenceEnabled: data.geofenceEnabled,
-      geofenceLat: data.geofenceLat,
-      geofenceLng: data.geofenceLng,
-      geofenceRadius: data.geofenceRadius,
     };
+
+    const geofencePatchProvided =
+      data.geofenceEnabled !== undefined ||
+      data.geofenceLat !== undefined ||
+      data.geofenceLng !== undefined ||
+      data.geofenceRadius !== undefined;
+
+    if (geofencePatchProvided) {
+      const geofencePayload = normalizeGeofenceInput(
+        data.geofenceEnabled,
+        data.geofenceLat,
+        data.geofenceLng,
+        data.geofenceRadius,
+      );
+      if ('error' in geofencePayload) {
+        return NextResponse.json({ error: geofencePayload.error }, { status: 400 });
+      }
+      Object.assign(updateData, geofencePayload);
+    }
 
     // If password is provided, hash and update
     if (password) {
@@ -342,7 +426,7 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, employee });
+    return noStoreJson({ success: true, employee });
   } catch (error) {
     console.error('Error updating employee:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

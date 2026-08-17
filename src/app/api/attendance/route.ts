@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { dateTo24HourFormatWithSeconds } from '@/lib/time-utils';
 
+export const dynamic = 'force-dynamic';
+
+const SHOP_COVERAGE_ERROR = 'You are not coverage in the shop area.';
+
 function getLocalDateKey(value: unknown) {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return value;
@@ -33,6 +37,30 @@ function workSecondsBetween(startDate: string, startTime: string, endDate: strin
 
   const daySeconds = Math.round((end.getTime() - start.getTime()) / 1000);
   return daySeconds + endSeconds - startSeconds;
+}
+
+function calculateDistanceMeters(
+  coord1: { lat: number; lng: number },
+  coord2: { lat: number; lng: number },
+) {
+  const earthRadiusMeters = 6371e3;
+  const lat1 = (coord1.lat * Math.PI) / 180;
+  const lat2 = (coord2.lat * Math.PI) / 180;
+  const deltaLat = ((coord2.lat - coord1.lat) * Math.PI) / 180;
+  const deltaLng = ((coord2.lng - coord1.lng) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) *
+      Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+
+  return earthRadiusMeters * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function parseCoordinate(value: unknown) {
+  if (value == null || !String(value).trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // GET /api/attendance - Get attendance records
@@ -99,7 +127,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { attendance: result },
+      { success: true, attendance: result },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
@@ -136,7 +164,14 @@ export async function POST(request: NextRequest) {
 
     const employee = await db.employee.findUnique({
       where: { id: employeeId },
-      select: { id: true, active: true },
+      select: {
+        id: true,
+        active: true,
+        geofenceEnabled: true,
+        geofenceLat: true,
+        geofenceLng: true,
+        geofenceRadius: true,
+      },
     });
 
     if (!employee) {
@@ -170,6 +205,47 @@ export async function POST(request: NextRequest) {
     const displayTime = time; // Return full time with seconds to frontend
     const shortTime = time.slice(0, 5); // For backward compatibility (HH:MM)
 
+    if (employee.geofenceEnabled) {
+      if (
+        employee.geofenceLat == null ||
+        employee.geofenceLng == null ||
+        employee.geofenceRadius == null ||
+        employee.geofenceRadius <= 0
+      ) {
+        return NextResponse.json(
+          { error: 'Shop geofence is not configured correctly. Please contact admin.' },
+          { status: 400 },
+        );
+      }
+
+      const currentLat = parseCoordinate(latitude);
+      const currentLng = parseCoordinate(longitude);
+
+      if (currentLat == null || currentLng == null) {
+        return NextResponse.json(
+          { error: `GPS location is required for ${type === 'in' ? 'punch in' : 'punch out'}.` },
+          { status: 400 },
+        );
+      }
+
+      const distanceMeters = calculateDistanceMeters(
+        { lat: currentLat, lng: currentLng },
+        { lat: employee.geofenceLat, lng: employee.geofenceLng },
+      );
+
+      if (distanceMeters > employee.geofenceRadius) {
+        const actionLabel = type === 'in' ? 'punch in' : 'punch out';
+        return NextResponse.json(
+          {
+            error: `You are not in a valid area for ${actionLabel}. (Distance: ${Math.round(distanceMeters)}m, Allowed: ${employee.geofenceRadius}m)`,
+            distanceMeters: Math.round(distanceMeters),
+            allowedRadiusMeters: employee.geofenceRadius,
+          },
+          { status: 403 },
+        );
+      }
+    }
+
     if (type === 'in') {
       // Check if already punched in
       let existing = await db.attendance.findUnique({
@@ -181,17 +257,47 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      const openRecord = await db.attendance.findFirst({
+        where: {
+          employeeId,
+          punchIn: { not: null },
+          punchOut: null,
+        },
+        orderBy: [
+          { date: 'desc' },
+          { punchIn: 'desc' },
+        ],
+      });
+
+      if (openRecord && openRecord.date !== date) {
+        return NextResponse.json(
+          { error: 'Please punch out from your open attendance before punching in again.' },
+          { status: 400 },
+        );
+      }
+
       if (existing && existing.punchIn) {
         console.log('Already punched in for today:', existing.punchIn);
+        if (existing.punchOut) {
+          return NextResponse.json({
+            success: true,
+            alreadyRecorded: true,
+            message: 'Attendance already completed for today. Next punch-in will be available after 12:01 AM.',
+            attendance: existing,
+            time: existing.punchOut,
+            accurateTime: existing.punchOut,
+            workHours: existing.workHours,
+            overtime: existing.overtime,
+          });
+        }
         return NextResponse.json({
           success: true,
           alreadyRecorded: true,
+          message: 'Already punched in for today.',
           attendance: existing,
-          time: existing.punchIn.slice(0, 5),
+          time: existing.punchIn,
           accurateTime: existing.punchIn,
-          message: existing.punchOut
-            ? 'Attendance already completed for today'
-            : 'Already punched in for today',
+          accuracy: accuracy || null,
         });
       }
 
@@ -201,9 +307,9 @@ export async function POST(request: NextRequest) {
           where: { id: existing.id },
           data: {
             punchIn: time,
-            punchInLat: latitude,
-            punchInLng: longitude,
-            punchInPhoto: photo,
+            punchInLat: latitude || null,
+            punchInLng: longitude || null,
+            punchInPhoto: photo || null,
             status: 'present',
           },
         });
@@ -268,7 +374,16 @@ export async function POST(request: NextRequest) {
 
       if (existing.punchOut) {
         console.log('Already punched out:', existing.punchOut);
-        return NextResponse.json({ error: 'Already punched out' }, { status: 400 });
+        return NextResponse.json({
+          success: true,
+          alreadyRecorded: true,
+          message: 'Already punched out for today.',
+          attendance: existing,
+          time: existing.punchOut,
+          accurateTime: existing.punchOut,
+          workHours: existing.workHours,
+          overtime: existing.overtime,
+        });
       }
 
       const workSeconds = workSecondsBetween(existing.date, existing.punchIn, date, time);

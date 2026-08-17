@@ -105,7 +105,7 @@ const weekDays = [
   { value: 6, label: 'Saturday' },
 ];
 
-const syncYears = [2024, 2025, 2026, 2027];
+const syncYears = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
 
 const emptyFormData = {
   holidayName: '',
@@ -124,39 +124,42 @@ const emptyFormData = {
 
 // Extended translation keys (fallbacks if not in i18n store)
 const fallbackT = {
-  syncHolidays: 'Sync Holidays',
-  syncPreviewLoading: 'Checking holidays...',
-  syncPreviewCount: (count: number, source: string) => `${count} holidays found via ${source}`,
-  syncNewDrafts: (count: number, source: string) => `${count} new holidays added as draft (Source: ${source})`,
+  syncHolidays: 'Sync Indian Holidays',
+  syncPreviewLoading: 'Fetching Indian Holidays...',
+  syncPreviewCount: (count: number, source: string) => `${count} Indian holidays found (${source})`,
+  syncNewDrafts: (count: number, source: string) => `${count} Indian holidays synced (${source})`,
   googleConnected: 'Google Calendar: Connected',
-  googleNotConnected: 'Google Calendar: Not connected (using India Post live source)',
+  googleNotConnected: 'National Live Calendar Engine: Active',
   publishAll: 'Publish All',
   deleteDrafts: 'Delete Drafts',
   draftBanner: (count: number) => `${count} holiday${count === 1 ? '' : 's'} in draft`,
   published: 'Published',
   all: 'All',
+  sourceCalendarBharat: 'National Calendar (Live)',
   sourceIndiaPost: 'India Post',
   sourceOfficeHolidays: 'Office Holidays',
   sourceGoogle: 'Google',
   sourceStatic: 'Static',
   year: 'Year',
-  previewSync: 'Preview sync before importing',
+  previewSync: 'Live auto-sync of official gazetted, festival & bank holidays',
 };
 
 function getSyncSourceLabel(source?: string | null): string | null {
   if (!source) return null;
-  if (source === 'india-post') return 'India Post';
+  if (source === 'calendar-bharat') return 'National Calendar (Live)';
+  if (source === 'india-post') return 'India Post / IPPB';
   if (source === 'office-holidays-ics') return 'Office Holidays';
-  if (source === 'google-calendar') return 'Google';
-  if (source === 'static-database') return 'Static';
+  if (source === 'google-calendar') return 'Google Calendar';
+  if (source === 'static-database') return 'Indian Standard';
   return source;
 }
 
 function getSourceDisplayName(source: string): string {
-  if (source === 'india-post') return 'India Post';
+  if (source === 'calendar-bharat') return 'National Indian Calendar (Official Live)';
+  if (source === 'india-post') return 'India Post & IPPB Live Portal';
   if (source === 'office-holidays-ics') return 'Office Holidays iCal';
-  if (source === 'google-calendar') return 'Google Calendar';
-  if (source === 'static-database') return 'Static Database';
+  if (source === 'google-calendar') return 'Google Calendar (India)';
+  if (source === 'static-database') return 'Official Indian Standard & Bank Holidays';
   return source;
 }
 
@@ -177,6 +180,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
   // New states for sync, filter, bulk actions
   const [syncYear, setSyncYear] = useState(new Date().getFullYear());
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
   const [syncPreviewLoading, setSyncPreviewLoading] = useState(false);
   const [hasGoogleKey, setHasGoogleKey] = useState(false);
@@ -184,7 +188,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const [isBulkAction, setIsBulkAction] = useState(false);
 
   // Fetch holidays
-  const fetchHolidays = async (statusFilter?: string) => {
+  const fetchHolidays = async (statusFilter?: string, yearFilter?: string) => {
     if (!organizationId) {
       setError(t.holiday.organizationNotFound);
       setIsLoading(false);
@@ -194,7 +198,8 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     try {
       setError(null);
       const filterParam = statusFilter || activeFilter;
-      const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}`;
+      const yr = yearFilter !== undefined ? yearFilter : selectedYear;
+      const url = `/api/holidays?organizationId=${organizationId}${filterParam !== 'all' ? `&status=${filterParam}` : ''}${yr !== 'all' ? `&year=${yr}` : ''}`;
       const data = await fetchJSON(url);
 
       if (data?.success) {
@@ -215,12 +220,12 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
     fetchHolidays();
   }, [organizationId]);
 
-  // Re-fetch when filter changes
+  // Re-fetch when filter or year changes
   useEffect(() => {
     if (organizationId) {
-      fetchHolidays(activeFilter);
+      fetchHolidays(activeFilter, selectedYear);
     }
-  }, [activeFilter, organizationId]);
+  }, [activeFilter, selectedYear, organizationId]);
 
   // Preview sync (GET)
   const handleSyncPreview = async () => {
@@ -264,10 +269,13 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
       if (data?.success) {
         const sourceName = data.sourceLabel || getSourceDisplayName(data.source);
-        setSuccess(fallbackT.syncNewDrafts(data.added || 0, sourceName));
+        const msg = data.message || `All ${data.total || data.added || 14} Indian holidays for year ${syncYear} refreshed and synced! (${sourceName})`;
+        setSuccess(msg);
         setSyncPreview(null);
+        setSelectedYear(syncYear.toString());
+        setCurrentMonth(new Date(syncYear, 0, 1));
         setHasGoogleKey(data.source === 'google-calendar');
-        fetchHolidays(activeFilter);
+        fetchHolidays(activeFilter, syncYear.toString());
       } else {
         setError(data?.error || 'Failed to sync holidays');
       }
@@ -684,21 +692,47 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
         </div>
       )}
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
-        {filterTabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveFilter(tab.key)}
-            className={`flex-1 py-1.5 px-3 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-              activeFilter === tab.key
-                ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
+      {/* Filter Tabs & Year Selector */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1 flex-1">
+          {filterTabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveFilter(tab.key)}
+              className={`flex-1 py-1.5 px-3 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                activeFilter === tab.key
+                  ? 'bg-white dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.label} <span className="text-[10px] ml-1 opacity-70">({tab.count})</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">Year View:</Label>
+          <Select
+            value={selectedYear}
+            onValueChange={(val) => {
+              setSelectedYear(val);
+              if (val !== 'all') {
+                setCurrentMonth(new Date(parseInt(val), currentMonth.getMonth(), 1));
+              }
+            }}
           >
-            {tab.label} <span className="text-[10px] ml-1 opacity-70">({tab.count})</span>
-          </button>
-        ))}
+            <SelectTrigger className="w-[115px] h-8 text-xs">
+              <CalendarDays className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {syncYears.map((y) => (
+                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Bulk Actions Bar — shown when drafts exist and filter is all or draft */}

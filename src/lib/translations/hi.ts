@@ -310,6 +310,16 @@ export const hi = {
     noActivitiesFound: 'इस तिथि के लिए कोई गतिविधि नहीं मिली',
     punchInPhoto: 'पंच इन फोटो',
     punchOutPhoto: 'पंच आउट फोटो',
+    attendanceCompleted: 'आज की उपस्थिति पूर्ण हो चुकी है',
+    attendanceCompletedDesc: 'आपकी आज की उपस्थिति दर्ज हो चुकी है। अगली उपस्थिति कल रात 12:00 बजे के बाद दर्ज होगी।',
+    alreadyPunchedIn: 'उपस्थिति दर्ज है (ड्यूटी पर हैं)',
+    workingDuration: 'कार्य अवधि',
+    onePunchPerDayNote: 'प्रतिदिन केवल 1 बार पंच इन और 1 बार पंच आउट की अनुमति है',
+    nextPunchTomorrow: 'अगला पंच-इन कल रात 12:00 बजे के बाद खुलेगा',
+    onDutyLive: 'ड्यूटी पर हैं (सक्रिय)',
+    readyToPunchIn: 'उपस्थिति दर्ज करने के लिए तैयार',
+    todaySummary: 'आज का विवरण',
+    totalWorked: 'कुल कार्य समय',
   },
 
   // Leave

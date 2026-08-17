@@ -312,6 +312,16 @@ export const en = {
     noActivitiesFound: 'No activities found for this date',
     punchInPhoto: 'Punch In Photo',
     punchOutPhoto: 'Punch Out Photo',
+    attendanceCompleted: "Today's Attendance Completed",
+    attendanceCompletedDesc: 'You have completed attendance for today. Next punch-in will open tomorrow after 12:00 AM midnight.',
+    alreadyPunchedIn: 'Currently Punched In',
+    workingDuration: 'Working Duration',
+    onePunchPerDayNote: 'Only 1 Punch In & 1 Punch Out allowed per day',
+    nextPunchTomorrow: 'Next punch-in opens tomorrow after 12:00 AM midnight',
+    onDutyLive: 'On Duty (Active)',
+    readyToPunchIn: 'Ready to Punch In',
+    todaySummary: "Today's Summary",
+    totalWorked: 'Total Worked',
   },
 
   // Leave

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
 type HolidayItem = { date: string; name: string; type: string };
-type HolidaySource = 'india-post' | 'office-holidays-ics' | 'google-calendar' | 'static-database';
+type HolidaySource = 'calendar-bharat' | 'india-post' | 'office-holidays-ics' | 'google-calendar' | 'static-database';
 
+const CALENDAR_BHARAT_URL = 'https://jayantur13.github.io/calendar-bharat/calendar';
 const INDIA_POST_HOLIDAYS_URL = 'https://www.indiapost.gov.in/holidays-list';
 const OFFICE_HOLIDAYS_ICS_URL = 'https://www.officeholidays.com/ics-clean/india';
 
@@ -14,44 +15,70 @@ const FALLBACK_HOLIDAYS: Record<string, HolidayItem[]> = {
     { date: '2025-01-26', name: 'Republic Day', type: 'national' },
     { date: '2025-02-26', name: 'Maha Shivaratri', type: 'festival' },
     { date: '2025-03-14', name: 'Holi', type: 'festival' },
-    { date: '2025-03-30', name: 'Id ul-Fitr', type: 'festival' },
-    { date: '2025-04-06', name: 'Ram Navami', type: 'festival' },
-    { date: '2025-04-14', name: 'Ambedkar Jayanti / Vaisakhi', type: 'national' },
+    { date: '2025-03-31', name: 'Id-ul-Fitr (Ramzan Id)', type: 'festival' },
+    { date: '2025-04-01', name: 'Annual Bank Closing / IPPB Closing', type: 'company' },
+    { date: '2025-04-06', name: 'Mahavir Jayanti', type: 'festival' },
+    { date: '2025-04-14', name: 'Dr. B.R. Ambedkar Jayanti / Vaisakhi', type: 'national' },
+    { date: '2025-04-18', name: 'Good Friday', type: 'festival' },
     { date: '2025-05-12', name: 'Buddha Purnima', type: 'festival' },
-    { date: '2025-06-07', name: 'Bakri Id', type: 'festival' },
+    { date: '2025-06-07', name: 'Bakri Id / Id-ul-Zuha', type: 'festival' },
+    { date: '2025-07-06', name: 'Muharram', type: 'festival' },
     { date: '2025-08-15', name: 'Independence Day', type: 'national' },
-    { date: '2025-08-16', name: 'Parsi New Year', type: 'festival' },
-    { date: '2025-08-27', name: 'Janmashtami', type: 'festival' },
-    { date: '2025-09-05', name: 'Ganesh Chaturthi', type: 'festival' },
-    { date: '2025-10-02', name: 'Gandhi Jayanti', type: 'national' },
-    { date: '2025-10-20', name: 'Dussehra', type: 'festival' },
-    { date: '2025-10-21', name: 'Muharram', type: 'festival' },
-    { date: '2025-11-05', name: 'Diwali', type: 'festival' },
-    { date: '2025-11-06', name: 'Govardhan Puja', type: 'festival' },
-    { date: '2025-11-07', name: 'Bhai Duj', type: 'festival' },
-    { date: '2025-12-25', name: 'Christmas', type: 'festival' },
+    { date: '2025-08-16', name: 'Janmashtami (Vaishnava)', type: 'festival' },
+    { date: '2025-09-05', name: 'Milad-un-Nabi (Id-e-Milad)', type: 'festival' },
+    { date: '2025-10-02', name: 'Mahatma Gandhi Jayanti', type: 'national' },
+    { date: '2025-10-20', name: 'Dussehra (Vijaya Dashami)', type: 'festival' },
+    { date: '2025-11-01', name: 'Diwali (Deepavali)', type: 'festival' },
+    { date: '2025-11-02', name: 'Govardhan Puja', type: 'festival' },
+    { date: '2025-11-03', name: 'Bhai Duj', type: 'festival' },
+    { date: '2025-11-05', name: 'Guru Nanak Jayanti', type: 'festival' },
+    { date: '2025-12-25', name: 'Christmas Day', type: 'festival' },
   ],
   '2026': [
     { date: '2026-01-01', name: "New Year's Day", type: 'company' },
     { date: '2026-01-14', name: 'Makar Sankranti / Pongal', type: 'festival' },
-    { date: '2026-01-26', name: 'Republic Day', type: 'national' },
-    { date: '2026-02-27', name: 'Maha Shivaratri', type: 'festival' },
-    { date: '2026-03-04', name: 'Holi', type: 'festival' },
-    { date: '2026-03-20', name: 'Id ul-Fitr', type: 'festival' },
-    { date: '2026-04-02', name: 'Ram Navami', type: 'festival' },
-    { date: '2026-04-14', name: 'Ambedkar Jayanti / Vaisakhi', type: 'national' },
-    { date: '2026-05-26', name: 'Buddha Purnima', type: 'festival' },
-    { date: '2026-06-27', name: 'Bakri Id', type: 'festival' },
-    { date: '2026-08-15', name: 'Independence Day', type: 'national' },
-    { date: '2026-08-17', name: 'Parsi New Year', type: 'festival' },
-    { date: '2026-08-27', name: 'Janmashtami', type: 'festival' },
-    { date: '2026-09-25', name: 'Ganesh Chaturthi', type: 'festival' },
-    { date: '2026-10-02', name: 'Gandhi Jayanti', type: 'national' },
-    { date: '2026-10-09', name: 'Dussehra', type: 'festival' },
-    { date: '2026-11-04', name: 'Diwali', type: 'festival' },
-    { date: '2026-11-05', name: 'Govardhan Puja', type: 'festival' },
-    { date: '2026-11-06', name: 'Bhai Duj', type: 'festival' },
-    { date: '2026-12-25', name: 'Christmas', type: 'festival' },
+    { date: '2026-01-26', name: 'Republic Day (National Holiday)', type: 'national' },
+    { date: '2026-02-15', name: 'Maha Shivaratri', type: 'festival' },
+    { date: '2026-03-04', name: 'Holi (Festival of Colours)', type: 'festival' },
+    { date: '2026-03-21', name: 'Id-ul-Fitr (Ramzan Id)', type: 'festival' },
+    { date: '2026-04-01', name: 'Annual Bank Closing (IPPB & Banks)', type: 'company' },
+    { date: '2026-04-03', name: 'Good Friday', type: 'festival' },
+    { date: '2026-04-14', name: 'Dr. B.R. Ambedkar Jayanti / Vaisakhi', type: 'national' },
+    { date: '2026-04-21', name: 'Mahavir Jayanti', type: 'festival' },
+    { date: '2026-05-01', name: 'May Day / Labour Day', type: 'national' },
+    { date: '2026-05-28', name: 'Bakri Id / Id-ul-Zuha', type: 'festival' },
+    { date: '2026-05-31', name: 'Buddha Purnima', type: 'festival' },
+    { date: '2026-06-26', name: 'Muharram', type: 'festival' },
+    { date: '2026-08-15', name: 'Independence Day (National Holiday)', type: 'national' },
+    { date: '2026-08-27', name: 'Milad-un-Nabi (Id-e-Milad)', type: 'festival' },
+    { date: '2026-09-04', name: 'Janmashtami', type: 'festival' },
+    { date: '2026-09-14', name: 'Ganesh Chaturthi', type: 'festival' },
+    { date: '2026-10-02', name: 'Mahatma Gandhi Jayanti (National Holiday)', type: 'national' },
+    { date: '2026-10-20', name: 'Dussehra (Vijaya Dashami)', type: 'festival' },
+    { date: '2026-11-08', name: 'Diwali (Deepavali)', type: 'festival' },
+    { date: '2026-11-09', name: 'Govardhan Puja', type: 'festival' },
+    { date: '2026-11-10', name: 'Bhai Dooj', type: 'festival' },
+    { date: '2026-11-24', name: 'Guru Nanak Jayanti', type: 'festival' },
+    { date: '2026-12-25', name: 'Christmas Day', type: 'festival' },
+  ],
+  '2027': [
+    { date: '2027-01-01', name: "New Year's Day", type: 'company' },
+    { date: '2027-01-14', name: 'Makar Sankranti / Pongal', type: 'festival' },
+    { date: '2027-01-26', name: 'Republic Day (National Holiday)', type: 'national' },
+    { date: '2027-03-07', name: 'Maha Shivaratri', type: 'festival' },
+    { date: '2027-03-10', name: 'Id-ul-Fitr (Ramzan Id)', type: 'festival' },
+    { date: '2027-03-23', name: 'Holi', type: 'festival' },
+    { date: '2027-03-26', name: 'Good Friday', type: 'festival' },
+    { date: '2027-04-01', name: 'Annual Bank Closing (IPPB & Banks)', type: 'company' },
+    { date: '2027-04-14', name: 'Dr. B.R. Ambedkar Jayanti', type: 'national' },
+    { date: '2027-05-17', name: 'Bakri Id / Id-ul-Zuha', type: 'festival' },
+    { date: '2027-05-20', name: 'Buddha Purnima', type: 'festival' },
+    { date: '2027-08-15', name: 'Independence Day', type: 'national' },
+    { date: '2027-10-02', name: 'Mahatma Gandhi Jayanti', type: 'national' },
+    { date: '2027-10-10', name: 'Dussehra (Vijaya Dashami)', type: 'festival' },
+    { date: '2027-10-29', name: 'Diwali (Deepavali)', type: 'festival' },
+    { date: '2027-11-14', name: 'Guru Nanak Jayanti', type: 'festival' },
+    { date: '2027-12-25', name: 'Christmas Day', type: 'festival' },
   ],
 };
 
@@ -65,7 +92,7 @@ interface GoogleCalendarEvent {
 function classifyHolidayType(name: string): string {
   const lower = name.toLowerCase();
 
-  if (['republic day', 'independence day', 'gandhi jayanti', 'mahatma gandhi'].some((keyword) => lower.includes(keyword))) {
+  if (['republic day', 'independence day', 'gandhi jayanti', 'mahatma gandhi', 'ambedkar', 'labour day', 'may day'].some((keyword) => lower.includes(keyword))) {
     return 'national';
   }
 
@@ -74,10 +101,11 @@ function classifyHolidayType(name: string): string {
     'janmashtami', 'ganesh', 'ram navami', 'pongal', 'sankranti', 'buddha',
     'shivaratri', 'bakri', 'muharram', 'guru', 'raksha', 'lohri', 'baisakhi',
     'vaisakhi', 'onam', 'bhai', 'govardhan', 'makar', 'easter', 'good friday',
-    'ambedkar', 'mahavir', 'prophet', 'mohammad', 'milad',
+    'mahavir', 'prophet', 'mohammad', 'milad', 'chath', 'chhath', 'durga puja',
   ];
 
   if (festivalKeywords.some((keyword) => lower.includes(keyword))) return 'festival';
+  if (lower.includes('bank') || lower.includes('closing') || lower.includes('new year')) return 'company';
   if (lower.includes('sunday') || lower.includes('saturday')) return 'weekly';
   return 'festival';
 }
@@ -104,29 +132,24 @@ function normalizeHtmlText(html: string): string {
     .trim();
 }
 
-function parseIndiaPostDate(value: string): string | null {
-  const match = value.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
+function parseBharatDate(dateStr: string, defaultYear: number): string | null {
+  const match = dateStr.match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/);
   if (!match) return null;
 
+  const monthName = match[1].toLowerCase();
+  const day = match[2].padStart(2, '0');
+  const matchedYear = match[3] || String(defaultYear);
+
   const months: Record<string, string> = {
-    january: '01',
-    february: '02',
-    march: '03',
-    april: '04',
-    may: '05',
-    june: '06',
-    july: '07',
-    august: '08',
-    september: '09',
-    october: '10',
-    november: '11',
-    december: '12',
+    january: '01', february: '02', march: '03', april: '04',
+    may: '05', june: '06', july: '07', august: '08',
+    september: '09', october: '10', november: '11', december: '12'
   };
 
-  const month = months[match[2].toLowerCase()];
+  const month = months[monthName];
   if (!month) return null;
 
-  return `${match[3]}-${month}-${match[1].padStart(2, '0')}`;
+  return `${matchedYear}-${month}-${day}`;
 }
 
 function dedupeAndSortHolidays(holidays: HolidayItem[]): HolidayItem[] {
@@ -139,6 +162,61 @@ function dedupeAndSortHolidays(holidays: HolidayItem[]): HolidayItem[] {
       return true;
     })
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 1. Primary Live Engine: Calendar Bharat Open API (Official Indian National Calendar)
+async function fetchCalendarBharatHolidays(year: number): Promise<HolidayItem[]> {
+  const url = `${CALENDAR_BHARAT_URL}/${year}.json`;
+  const response = await fetch(url, {
+    next: { revalidate: 86400 },
+    headers: { 'User-Agent': 'HB-Sallery-Box/1.0 (India Holiday Sync)' },
+  });
+
+  if (!response.ok) throw new Error(`Calendar Bharat API returned ${response.status}`);
+
+  const data = await response.json();
+  const yearObj = data[String(year)] || {};
+  const holidays: HolidayItem[] = [];
+
+  for (const [monthKey, monthObj] of Object.entries(yearObj)) {
+    if (!monthObj || typeof monthObj !== 'object') continue;
+    for (const [dateKey, item] of Object.entries(monthObj as Record<string, { event?: string; type?: string; extras?: string }>)) {
+      if (!item || !item.event) continue;
+      const isoDate = parseBharatDate(dateKey, year);
+      if (!isoDate) continue;
+
+      const itemType = (item.type || '').toLowerCase();
+      // Exclude trivial info items unless they represent standard national days or festivals
+      if (itemType === 'good to know' && !item.event.toLowerCase().includes('day') && !item.event.toLowerCase().includes('jayanti')) {
+        continue;
+      }
+
+      holidays.push({
+        date: isoDate,
+        name: item.event,
+        type: classifyHolidayType(item.event),
+      });
+    }
+  }
+
+  if (holidays.length === 0) throw new Error(`Calendar Bharat has no items for ${year}`);
+  return dedupeAndSortHolidays(holidays);
+}
+
+function parseIndiaPostDate(value: string): string | null {
+  const match = value.match(/^(\d{1,2})-([A-Za-z]+)-(\d{4})$/);
+  if (!match) return null;
+
+  const months: Record<string, string> = {
+    january: '01', february: '02', march: '03', april: '04',
+    may: '05', june: '06', july: '07', august: '08',
+    september: '09', october: '10', november: '11', december: '12',
+  };
+
+  const month = months[match[2].toLowerCase()];
+  if (!month) return null;
+
+  return `${match[3]}-${month}-${match[1].padStart(2, '0')}`;
 }
 
 function parseIndiaPostHolidays(html: string, year: number): HolidayItem[] {
@@ -266,6 +344,15 @@ async function fetchGoogleCalendarHolidays(year: number): Promise<HolidayItem[]>
 }
 
 async function getIndianHolidays(year: number): Promise<{ holidays: HolidayItem[]; source: HolidaySource }> {
+  // 1. Primary: Calendar Bharat (National Indian Calendar API)
+  try {
+    const holidays = await fetchCalendarBharatHolidays(year);
+    if (holidays.length > 0) return { holidays, source: 'calendar-bharat' };
+  } catch (error) {
+    console.warn('Calendar Bharat holiday fetch failed:', error);
+  }
+
+  // 2. India Post official portal
   try {
     const holidays = await fetchIndiaPostHolidays(year);
     if (holidays.length > 0) return { holidays, source: 'india-post' };
@@ -273,6 +360,7 @@ async function getIndianHolidays(year: number): Promise<{ holidays: HolidayItem[
     console.warn('India Post holiday fetch failed:', error);
   }
 
+  // 3. Office Holidays iCal
   try {
     const holidays = await fetchOfficeHolidaysCalendar(year);
     if (holidays.length > 0) return { holidays, source: 'office-holidays-ics' };
@@ -280,6 +368,7 @@ async function getIndianHolidays(year: number): Promise<{ holidays: HolidayItem[
     console.warn('Office Holidays iCal fetch failed:', error);
   }
 
+  // 4. Google Calendar API (if configured)
   if (process.env.GOOGLE_CALENDAR_API_KEY) {
     try {
       const holidays = await fetchGoogleCalendarHolidays(year);
@@ -289,6 +378,7 @@ async function getIndianHolidays(year: number): Promise<{ holidays: HolidayItem[
     }
   }
 
+  // 5. Offline Database
   return {
     holidays: (FALLBACK_HOLIDAYS[String(year)] || FALLBACK_HOLIDAYS['2026']).map((holiday) => ({ ...holiday })),
     source: 'static-database',
@@ -306,30 +396,44 @@ export async function POST(request: NextRequest) {
 
     const year = Number(yearParam) || new Date().getFullYear();
     const { holidays, source } = await getIndianHolidays(year);
+
+    // 1. Filter holidays strictly for the requested year
+    const yearHolidays = holidays.filter((h) => h.date.startsWith(String(year)));
+
+    const sourceLabels: Record<HolidaySource, string> = {
+      'calendar-bharat': 'National Indian Calendar (Official Live)',
+      'india-post': 'India Post (Government Live)',
+      'office-holidays-ics': 'Office Holidays iCal (Live)',
+      'google-calendar': 'Google Calendar (Live)',
+      'static-database': 'National Calendar (Standard)',
+    };
+
+    const sourceLabel = sourceLabels[source] || 'National Indian Calendar';
+    const syncDescription = `Official Indian Holiday (Source: ${source === 'calendar-bharat' ? 'National Indian Calendar' : source === 'india-post' ? 'India Post' : source === 'office-holidays-ics' ? 'Office Holidays iCal' : source === 'google-calendar' ? 'Google Calendar' : 'National Standard'})`;
+
+    // 2. Clean out previous synced holidays of THIS specific year to avoid any duplicates or old data
+    await db.holiday.deleteMany({
+      where: {
+        organizationId,
+        date: { startsWith: String(year) },
+      },
+    });
+
+    // 3. Add fresh clean holidays for this specific year
     let added = 0;
-    let skipped = 0;
     let errors = 0;
 
-    for (const holiday of holidays) {
+    for (const holiday of yearHolidays) {
       try {
-        const existing = await db.holiday.findUnique({
-          where: { organizationId_date: { organizationId, date: holiday.date } },
-        });
-
-        if (existing) {
-          skipped++;
-          continue;
-        }
-
         await db.holiday.create({
           data: {
             organizationId,
             holidayName: holiday.name,
             date: holiday.date,
             holidayType: holiday.type,
-            description: `Synced from ${source === 'india-post' ? 'India Post' : source === 'office-holidays-ics' ? 'Office Holidays iCal' : source === 'google-calendar' ? 'Google Calendar' : 'Offline Database'}`,
+            description: syncDescription,
             createdBy: adminId,
-            status: 'draft',
+            status: 'active',
             syncSource: source,
             isPaid: true,
           },
@@ -341,23 +445,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const sourceLabels: Record<HolidaySource, string> = {
-      'india-post': 'India Post (Government Live)',
-      'office-holidays-ics': 'Office Holidays iCal (Live)',
-      'google-calendar': 'Google Calendar (Live)',
-      'static-database': 'Offline Database (Static)',
-    };
+    const message = `All ${added} Indian holidays for year ${year} cleanly refreshed & synced! (${sourceLabel})`;
 
     return NextResponse.json({
       success: true,
       added,
-      skipped,
+      updated: 0,
+      skipped: 0,
       errors,
-      total: holidays.length,
+      total: yearHolidays.length,
       source,
-      sourceLabel: sourceLabels[source],
+      sourceLabel,
       year,
-      message: `${added} new holidays added as draft, ${skipped} already existed`,
+      message,
     });
   } catch (error) {
     console.error('Holiday sync error:', error);

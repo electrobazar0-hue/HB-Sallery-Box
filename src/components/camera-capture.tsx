@@ -76,14 +76,12 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
 
   // Start camera
   const startCamera = useCallback(async () => {
-    // Don't start if already active or starting
     if (!open || streamRef.current || isStarting) return;
 
     setIsStarting(true);
     setError(null);
 
     try {
-      // Request camera with better error handling
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
@@ -93,7 +91,6 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
         audio: false,
       });
 
-      // Check if component is still mounted
       if (!mountedRef.current) {
         mediaStream.getTracks().forEach(track => track.stop());
         return;
@@ -125,11 +122,6 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
     }
   }, [open, isStarting]);
 
-  // Stop camera (public function)
-  const stopCamera = useCallback(() => {
-    stopCameraStream();
-  }, [stopCameraStream]);
-
   // Handle dialog close
   const handleClose = useCallback(() => {
     stopCameraStream();
@@ -140,15 +132,12 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
 
   // Handle capture
   const handleCapture = useCallback(() => {
-    console.log('Camera capture triggered');
     if (!videoRef.current || !isActive) {
       setError('Camera is not active. Please wait for camera to start.');
       return;
     }
 
     const video = videoRef.current;
-
-    // Ensure video has valid dimensions
     if (video.videoWidth === 0 || video.videoHeight === 0) {
       setError('Camera not ready. Please wait and try again.');
       return;
@@ -164,13 +153,10 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
       return;
     }
 
-    // Draw the video frame
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-    console.log('Photo captured, size:', dataUrl.length);
     setCapturedPhoto(dataUrl);
-    // Stop stream after capture
     stopCameraStream();
   }, [isActive, stopCameraStream]);
 
@@ -178,7 +164,6 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
   const handleRetake = useCallback(() => {
     setCapturedPhoto(null);
     setError(null);
-    // Small delay before restarting camera
     setTimeout(() => {
       startCamera();
     }, 100);
@@ -186,13 +171,9 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
 
   // Handle confirm
   const handleConfirm = useCallback(() => {
-    console.log('Confirm button clicked, photo length:', capturedPhoto?.length || 0);
     if (capturedPhoto) {
-      console.log('Calling onCapture with photo');
       onCapture(capturedPhoto);
       handleClose();
-    } else {
-      console.error('No captured photo to confirm');
     }
   }, [capturedPhoto, onCapture, handleClose]);
 
@@ -201,20 +182,16 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      // Cleanup camera on unmount
       stopCameraStream();
     };
   }, [stopCameraStream]);
 
-  // Start camera when dialog opens (with delay for animation)
+  // Start camera when dialog opens
   useEffect(() => {
     if (!open) return;
-
-    // Reset state when dialog opens
     setCapturedPhoto(null);
     setError(null);
 
-    // Delay to allow dialog animation to complete
     const timer = setTimeout(() => {
       startCamera();
     }, 200);
@@ -228,7 +205,6 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
     stopCameraStream();
   }, [open, stopCameraStream]);
 
-  // Show loading when dialog is open but camera is not active yet
   const showLoading = open && !isActive && !capturedPhoto && !error && (isStarting || !!cameraStream);
   const showError = error && !capturedPhoto && !showLoading;
   const showGuide = !capturedPhoto && isActive && !error;
@@ -240,7 +216,7 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
           <DialogTitle className="text-center">{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="relative aspect-[3/4] bg-black">
+        <div className="relative aspect-[4/3] sm:aspect-[3/4] max-h-[52dvh] bg-black rounded-xl overflow-hidden mx-3 sm:mx-4">
           {/* Camera Preview */}
           {!capturedPhoto && (
             <video
@@ -291,13 +267,13 @@ export function CameraCapture({ open, onCapture, onClose, title = 'Capture Photo
           {/* Face Guide Overlay */}
           {showGuide && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-48 h-48 border-4 border-white/50 rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.3)]" />
+              <div className="w-40 h-40 sm:w-48 sm:h-48 border-4 border-white/50 rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.3)]" />
             </div>
           )}
         </div>
 
         {/* Controls */}
-        <div className="p-4 flex justify-center gap-4 bg-background">
+        <div className="p-3 sm:p-4 flex justify-center gap-3 bg-background">
           {!capturedPhoto ? (
             <>
               <Button variant="outline" onClick={handleClose}>
