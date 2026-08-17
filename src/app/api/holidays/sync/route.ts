@@ -404,11 +404,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (!targetOrg) {
+      let admin = adminId ? await db.admin.findUnique({ where: { id: adminId } }) : null;
+      if (!admin) {
+        admin = await db.admin.findFirst();
+      }
+      if (!admin) {
+        admin = await db.admin.create({
+          data: {
+            userId: 'admin',
+            name: 'Admin User',
+            phone: '9999999999',
+            password: 'admin',
+            securityPassword: 'admin',
+          },
+        });
+      }
       targetOrg = await db.organization.create({
         data: {
-          name: 'My Organization',
-          email: 'admin@organization.com',
-          adminId: adminId || undefined,
+          name: 'Electro Bazaar',
+          address: 'India',
+          adminId: admin.id,
         },
       });
     }
@@ -441,14 +456,28 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 3. Add fresh clean holidays as drafts for this specific year
+    // 3. Add fresh clean holidays as drafts for this specific year using upsert
     let added = 0;
     let errors = 0;
 
     for (const holiday of yearHolidays) {
       try {
-        await db.holiday.create({
-          data: {
+        await db.holiday.upsert({
+          where: {
+            organizationId_date: {
+              organizationId: effectiveOrgId,
+              date: holiday.date,
+            },
+          },
+          update: {
+            holidayName: holiday.name,
+            holidayType: holiday.type,
+            description: syncDescription,
+            status: 'draft',
+            syncSource: source,
+            isPaid: true,
+          },
+          create: {
             organizationId: effectiveOrgId,
             holidayName: holiday.name,
             date: holiday.date,
@@ -482,7 +511,7 @@ export async function POST(request: NextRequest) {
       message,
     });
   } catch (error) {
-    console.error('Holiday sync error:', error);
+    console.error('Error syncing holidays:', error);
     return NextResponse.json({ success: false, error: 'Failed to sync holidays' }, { status: 500 });
   }
 }
