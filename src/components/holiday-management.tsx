@@ -589,7 +589,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
             <div className="flex items-center gap-2">
               {/* Year Selector */}
               <Select value={syncYear.toString()} onValueChange={(val) => { setSyncYear(parseInt(val)); setSyncPreview(null); }}>
-                <SelectTrigger className="w-[90px] h-9 text-sm">
+                <SelectTrigger className="w-[110px] h-9 text-sm">
                   <CalendarDays className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
                   <SelectValue />
                 </SelectTrigger>
