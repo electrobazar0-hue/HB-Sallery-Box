@@ -269,13 +269,14 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
 
       if (data?.success) {
         const sourceName = data.sourceLabel || getSourceDisplayName(data.source);
-        const msg = data.message || `All ${data.total || data.added || 14} Indian holidays for year ${syncYear} refreshed and synced! (${sourceName})`;
+        const msg = data.message || `All ${data.total || data.added || 14} Indian holidays for year ${syncYear} synced as drafts! (${sourceName})`;
         setSuccess(msg);
         setSyncPreview(null);
         setSelectedYear(syncYear.toString());
         setCurrentMonth(new Date(syncYear, 0, 1));
         setHasGoogleKey(data.source === 'google-calendar');
-        fetchHolidays(activeFilter, syncYear.toString());
+        setActiveFilter('draft');
+        fetchHolidays('draft', syncYear.toString());
       } else {
         setError(data?.error || 'Failed to sync holidays');
       }
@@ -298,15 +299,20 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
       const data = await fetchJSON('/api/holidays', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ organizationId, action, year: syncYear }),
+        body: JSON.stringify({ organizationId, action, year: selectedYear }),
       });
 
       if (data?.success) {
         const actionLabel = action === 'publish-all'
-          ? `${data.count} holidays published`
+          ? `All ${data.count} holidays published successfully!`
           : `${data.count} draft holidays deleted`;
         setSuccess(actionLabel);
-        fetchHolidays(activeFilter);
+        if (action === 'publish-all') {
+          setActiveFilter('active');
+          fetchHolidays('active', selectedYear);
+        } else {
+          fetchHolidays(activeFilter, selectedYear);
+        }
       } else {
         setError(data?.error || 'Bulk action failed');
       }
@@ -922,7 +928,9 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
           {/* All Holidays List */}
           <Card className="border-0 shadow-md">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base sm:text-lg">{t.holiday.allHolidays} ({holidays.length})</CardTitle>
+              <CardTitle className="text-base sm:text-lg">
+                {activeFilter === 'draft' ? `${t.holiday.draft} (${holidays.length})` : activeFilter === 'active' ? `${fallbackT.published} (${holidays.length})` : `${t.holiday.allHolidays} (${holidays.length})`}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[300px] sm:h-[350px]">
