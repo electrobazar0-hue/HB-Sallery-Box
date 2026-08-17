@@ -165,16 +165,20 @@ export async function PATCH(request: NextRequest) {
 
     let count = 0;
 
-    if (action === 'publish-all' && year) {
-      // Publish all draft holidays for a year
+    if (action === 'publish-all') {
+      // Publish all draft holidays for the organization (or year if specified)
+      const whereClause: Record<string, unknown> = { organizationId, status: 'draft' };
+      if (year) whereClause.date = { startsWith: String(year) };
       count = await db.holiday.updateMany({
-        where: { organizationId, date: { startsWith: String(year) }, status: 'draft' },
+        where: whereClause,
         data: { status: 'active' },
       }).then(r => r.count);
-    } else if (action === 'draft-all' && year) {
-      // Unpublish all active holidays for a year
+    } else if (action === 'draft-all') {
+      // Unpublish all active holidays
+      const whereClause: Record<string, unknown> = { organizationId, status: 'active' };
+      if (year) whereClause.date = { startsWith: String(year) };
       count = await db.holiday.updateMany({
-        where: { organizationId, date: { startsWith: String(year) }, status: 'active' },
+        where: whereClause,
         data: { status: 'draft' },
       }).then(r => r.count);
     } else if (action === 'publish' && Array.isArray(holidayIds)) {
@@ -189,10 +193,12 @@ export async function PATCH(request: NextRequest) {
         where: { id: { in: holidayIds } },
         data: { status: 'draft' },
       }).then(r => r.count);
-    } else if (action === 'delete-drafts' && year) {
-      // Delete all draft holidays for a year
+    } else if (action === 'delete-drafts') {
+      // Delete all draft holidays
+      const whereClause: Record<string, unknown> = { organizationId, status: 'draft' };
+      if (year) whereClause.date = { startsWith: String(year) };
       count = await db.holiday.deleteMany({
-        where: { organizationId, date: { startsWith: String(year) }, status: 'draft' },
+        where: whereClause,
       }).then(r => r.count);
     }
 
