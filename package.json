@@ -8,7 +8,7 @@
     "dev:3003": "next dev -p 3003 -H 0.0.0.0",
     "dev:47000": "next dev -p 47000 -H 0.0.0.0",
     "build": "next build",
-    "start": "next start",
+    "start": "node server.js",
     "postinstall": "prisma generate",
     "lint": "eslint .",
     "db:push": "prisma db push",
