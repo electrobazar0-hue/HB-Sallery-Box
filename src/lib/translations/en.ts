@@ -563,6 +563,11 @@ export const en = {
     company: 'Company',
     emergency: 'Emergency',
     addHoliday: 'Add Holiday',
+    syncIndianHolidays: 'Sync Indian Holidays',
+    syncHolidays: 'Sync Holidays',
+    syncPreview: 'Preview',
+    syncNow: 'Sync',
+    syncing: 'Syncing...',
     allowPunch: 'Allow Punch',
     recurring: 'Recurring',
 

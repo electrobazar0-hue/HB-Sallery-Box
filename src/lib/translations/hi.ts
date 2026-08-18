@@ -561,6 +561,11 @@ export const hi = {
     company: 'कंपनी',
     emergency: 'आपातकालीन',
     addHoliday: 'छुट्टी जोड़ें',
+    syncIndianHolidays: 'भारतीय छुट्टियां सिंक करें',
+    syncHolidays: 'छुट्टियां सिंक करें',
+    syncPreview: 'पूर्वावलोकन',
+    syncNow: 'सिंक करें',
+    syncing: 'सिंक हो रहा है...',
     allowPunch: 'पंच की अनुमति',
     recurring: 'आवर्ती',
 

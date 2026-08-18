@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, Plus, RefreshCw, Trash2, Edit, Check,
   Sun, PartyPopper, Building, AlertTriangle, Clock,
-  ChevronLeft, ChevronRight,
-  Eye, EyeOff, CalendarDays, Send,
+  ChevronLeft, ChevronRight, Download,
+  Eye, EyeOff, CalendarDays, Send, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,6 +59,7 @@ interface Holiday {
   isRecurring: boolean;
   recurringDay?: number;
   status: string;
+  syncSource?: string;
 }
 
 interface HolidayStats {
@@ -69,6 +70,14 @@ interface HolidayStats {
   halfDayHolidays: number;
   optionalHolidays: number;
   compOffHolidays: number;
+}
+
+interface SyncPreview {
+  holidays: Array<{ date: string; name: string; type: string }>;
+  count: number;
+  year: number;
+  source: string;
+  hasGoogleKey: boolean;
 }
 
 interface HolidayManagementProps {
@@ -101,6 +110,8 @@ const weekDays = [
   { value: 6, label: 'Saturday' },
 ];
 
+const syncYears = [2024, 2025, 2026, 2027];
+
 const emptyFormData = {
   holidayName: '',
   date: '',
@@ -117,6 +128,8 @@ const emptyFormData = {
 };
 
 const fallbackT = {
+  syncHolidays: 'Sync Holidays',
+  previewSync: 'Preview sync before importing',
   publishAll: 'Publish All',
   deleteDrafts: 'Delete Drafts',
   draftBanner: (count: number) => `${count} holiday${count === 1 ? '' : 's'} in draft (Hidden from employees)`,
@@ -134,6 +147,21 @@ const fallbackT = {
   deleteHolidayConfirm: 'Delete Holiday Confirmation',
 };
 
+function getSourceDisplayName(source: string): string {
+  if (source === 'india-post') return 'India Post (Government Live)';
+  if (source === 'office-holidays-ics') return 'Office Holidays iCal';
+  if (source === 'google-calendar') return 'Google Calendar';
+  return 'Indian Standard Calendar';
+}
+
+function getSyncSourceBadge(source?: string): { label: string; color: string } | null {
+  if (!source) return null;
+  if (source === 'india-post') return { label: 'India Post', color: 'border-orange-400 text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/20' };
+  if (source === 'office-holidays-ics') return { label: 'Office Holidays', color: 'border-blue-400 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/20' };
+  if (source === 'google-calendar') return { label: 'Google Cal', color: 'border-emerald-400 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20' };
+  return { label: 'Indian Std', color: 'border-teal-400 text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/20' };
+}
+
 export function HolidayManagement({ organizationId, adminId }: HolidayManagementProps) {
   const { t } = useLanguageStore();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -145,6 +173,12 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // Sync State
+  const [syncYear, setSyncYear] = useState<number>(new Date().getFullYear());
+  const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
+  const [syncPreviewLoading, setSyncPreviewLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [formData, setFormData] = useState({ ...emptyFormData });
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'draft'>('all');
@@ -187,6 +221,82 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
       fetchHolidays(activeFilter);
     }
   }, [activeFilter, organizationId]);
+
+  // Handle Sync Preview (GET)
+  const handleSyncPreview = async () => {
+    setSyncPreviewLoading(true);
+    setError(null);
+    try {
+      const data = await fetchJSON<{
+        success?: boolean;
+        holidays?: Array<{ date: string; name: string; type: string }>;
+        count?: number;
+        year?: number;
+        source?: string;
+        hasGoogleKey?: boolean;
+        error?: string;
+      }>(`/api/holidays/sync?year=${syncYear}`);
+
+      if (data?.success) {
+        setSyncPreview({
+          holidays: data.holidays || [],
+          count: data.count || (data.holidays?.length ?? 0),
+          year: data.year || syncYear,
+          source: data.source || 'static-database',
+          hasGoogleKey: !!data.hasGoogleKey,
+        });
+      } else {
+        setError(data?.error || 'Failed to fetch holiday preview');
+      }
+    } catch (err) {
+      console.error('Sync preview error:', err);
+      setError(t.holiday.failedFetchConnection);
+    } finally {
+      setSyncPreviewLoading(false);
+    }
+  };
+
+  // Handle Sync Holidays (POST) - Saves as draft
+  const handleSyncHolidays = async () => {
+    if (!organizationId || !adminId) return;
+
+    setIsSyncing(true);
+    setError(null);
+
+    try {
+      const data = await fetchJSON<{
+        success?: boolean;
+        added?: number;
+        skipped?: number;
+        total?: number;
+        source?: string;
+        sourceLabel?: string;
+        error?: string;
+        message?: string;
+      }>('/api/holidays/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          adminId,
+          year: syncYear,
+        }),
+      });
+
+      if (data?.success) {
+        setSuccess(data.message || `${data.added || 0} holidays synced into Draft`);
+        setSyncPreview(null);
+        fetchHolidays(activeFilter);
+      } else {
+        setError(data?.error || 'Failed to sync holidays');
+      }
+    } catch (err) {
+      console.error('Holiday sync error:', err);
+      setError(t.holiday.failedFetchConnection);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Bulk actions (PATCH)
   const handleBulkAction = async (action: string) => {
@@ -481,6 +591,128 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
         </div>
       </div>
 
+      {/* Sync Holidays Section */}
+      <Card className="border-0 shadow-sm bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                <Download className="h-4 w-4 text-emerald-500" />
+                {fallbackT.syncHolidays}
+              </h3>
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
+                {t.holiday.syncIndianHolidays} {fallbackT.previewSync}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Year Selector */}
+              <Select
+                value={syncYear.toString()}
+                onValueChange={(val) => {
+                  setSyncYear(parseInt(val));
+                  setSyncPreview(null);
+                }}
+              >
+                <SelectTrigger className="w-[90px] h-9 text-xs sm:text-sm bg-background">
+                  <CalendarDays className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {syncYears.map((y) => (
+                    <SelectItem key={y} value={y.toString()} className="text-xs sm:text-sm">
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Preview / Sync buttons */}
+              {!syncPreview ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSyncPreview}
+                  disabled={syncPreviewLoading}
+                  className="h-9 text-xs bg-background hover:bg-muted"
+                >
+                  {syncPreviewLoading ? (
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  {syncPreviewLoading ? 'Checking...' : 'Preview'}
+                </Button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    size="sm"
+                    onClick={handleSyncHolidays}
+                    disabled={isSyncing}
+                    className="h-9 text-xs bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm"
+                  >
+                    {isSyncing ? (
+                      <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    {isSyncing ? 'Syncing...' : `Sync ${syncPreview.count} (as Draft)`}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9"
+                    onClick={() => setSyncPreview(null)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Sync Preview Info Drawer */}
+          <AnimatePresence>
+            {syncPreview && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 overflow-hidden"
+              >
+                <div className="bg-background/90 rounded-lg p-3 text-[10px] sm:text-xs border shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+                      {syncPreview.count} holidays detected for {syncPreview.year}
+                    </p>
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-400 text-emerald-600">
+                      Source: {getSourceDisplayName(syncPreview.source)}
+                    </Badge>
+                  </div>
+                  <p className="text-muted-foreground text-[10px]">
+                    Note: Click &quot;Sync&quot; to import these holidays into Draft status. Admin can review and publish anytime.
+                  </p>
+                  <ScrollArea className="h-[120px] w-full rounded border p-2 bg-muted/20">
+                    <div className="space-y-1.5">
+                      {syncPreview.holidays.map((h, i) => (
+                        <div key={i} className="flex items-center justify-between text-[10px] sm:text-xs py-0.5 border-b border-border/40 last:border-0">
+                          <span className="font-medium truncate mr-2">{h.name}</span>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className="text-muted-foreground">{h.date}</span>
+                            <Badge className={`${getHolidayTypeInfo(h.type).color} text-white text-[8px] px-1 py-0`}>
+                              {h.type}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </CardContent>
+      </Card>
+
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
@@ -722,6 +954,7 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                         const typeInfo = getHolidayTypeInfo(holiday.holidayType);
                         const isDraft = holiday.status === 'draft';
                         const isActive = holiday.status === 'active';
+                        const syncBadge = getSyncSourceBadge(holiday.syncSource);
                         return (
                           <div
                             key={holiday.id}
@@ -753,6 +986,11 @@ export function HolidayManagement({ organizationId, adminId }: HolidayManagement
                                     <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-amber-500'}`} />
                                     {isActive ? 'Active (On)' : 'Draft (Off)'}
                                   </button>
+                                  {syncBadge && (
+                                    <Badge variant="outline" className={`text-[8px] px-1.5 py-0 ${syncBadge.color}`}>
+                                      📡 {syncBadge.label}
+                                    </Badge>
+                                  )}
                                 </div>
                                 <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
                                   {new Date(holiday.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
