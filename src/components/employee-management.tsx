@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/store/auth-store';
 import { CameraCapture } from '@/components/camera-capture';
 import { fetchJSON } from '@/lib/utils';
+import { getAccurateGPSPosition } from '@/lib/gps-accuracy';
 
 interface Employee {
   id: string;
@@ -188,31 +189,29 @@ export function EmployeeManagement() {
     setShowCameraCapture(false);
   };
 
-  // Handle get current location
-  const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) {
+  // Handle get current location with high-precision GPS
+  const handleGetCurrentLocation = async () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setFormData(prev => ({
-          ...prev,
-          geofenceLat: position.coords.latitude.toFixed(6),
-          geofenceLng: position.coords.longitude.toFixed(6),
-        }));
-      },
-      (error) => {
-        setError('Unable to get your location. Please enter coordinates manually.');
-        console.error('Geolocation error:', error);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
+    try {
+      const position = await getAccurateGPSPosition({
+        desiredAccuracy: 15,
+        maxWaitMs: 6000,
+        timeout: 15000,
+      });
+
+      setFormData(prev => ({
+        ...prev,
+        geofenceLat: position.latitude.toFixed(6),
+        geofenceLng: position.longitude.toFixed(6),
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to get your location. Please check GPS settings.');
+      console.error('Geolocation error:', err);
+    }
   };
 
   // Add employee

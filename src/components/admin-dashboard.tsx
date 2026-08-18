@@ -33,6 +33,7 @@ import { HolidayManagement } from '@/components/holiday-management';
 import { useNotifications, NotificationData } from '@/hooks/use-notifications';
 import { useLanguageStore } from '@/lib/i18n';
 import { fetchJSON } from '@/lib/utils';
+import { getAccurateGPSPosition } from '@/lib/gps-accuracy';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -534,28 +535,41 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     setEmployeeForm(prev => ({ ...prev, ...updates }));
   };
 
-  const handleDetectGeofenceLocation = () => {
-    if (!navigator.geolocation) {
+  const handleDetectGeofenceLocation = async () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
       addNotification({ title: t.common.error, body: 'GPS is not supported on this device.', type: 'announcement' });
       return;
     }
 
     setIsDetectingGeofence(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        updateGeofenceDraft({
-          geofenceEnabled: true,
-          geofenceLat: position.coords.latitude.toFixed(6),
-          geofenceLng: position.coords.longitude.toFixed(6),
-        });
-        setIsDetectingGeofence(false);
-      },
-      () => {
-        addNotification({ title: t.common.error, body: 'Unable to detect shop location. Please enter latitude and longitude manually.', type: 'announcement' });
-        setIsDetectingGeofence(false);
-      },
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 },
-    );
+    try {
+      const position = await getAccurateGPSPosition({
+        desiredAccuracy: 15,
+        maxWaitMs: 6000,
+        timeout: 15000,
+      });
+
+      updateGeofenceDraft({
+        geofenceEnabled: true,
+        geofenceLat: position.latitude.toFixed(6),
+        geofenceLng: position.longitude.toFixed(6),
+      });
+
+      addNotification({
+        title: 'Location Captured',
+        body: `High-accuracy GPS detected (±${Math.round(position.accuracy)}m): ${position.latitude.toFixed(6)}, ${position.longitude.toFixed(6)}`,
+        type: 'info',
+      });
+    } catch (err) {
+      console.error('GPS Detection error:', err);
+      addNotification({
+        title: t.common.error,
+        body: err instanceof Error ? err.message : 'Unable to detect accurate shop location.',
+        type: 'announcement',
+      });
+    } finally {
+      setIsDetectingGeofence(false);
+    }
   };
 
   const handleEmployeeDetailsNext = () => {

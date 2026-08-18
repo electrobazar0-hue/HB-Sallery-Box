@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
+import { getAccurateGPSPosition, getGeolocationErrorMessage } from '@/lib/gps-accuracy';
 
 export interface GPSCoordinates {
   latitude: number;
@@ -11,6 +12,7 @@ export interface GPSCoordinates {
   altitudeAccuracy?: number | null;
   heading?: number | null;
   speed?: number | null;
+  isHighAccuracy?: boolean;
 }
 
 export interface UseGPSOptions {
@@ -23,7 +25,7 @@ export interface UseGPSOptions {
 const geocodeCache = new Map<string, string>();
 
 export async function reverseGeocode(lat: number, lng: number): Promise<string> {
-  const cacheKey = `${lat.toFixed(4)}_${lng.toFixed(4)}`;
+  const cacheKey = `${lat.toFixed(5)}_${lng.toFixed(5)}`;
   if (geocodeCache.has(cacheKey)) {
     return geocodeCache.get(cacheKey)!;
   }
@@ -40,7 +42,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
       {
         headers: { 'Accept-Language': 'en,hi' },
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(3500),
       }
     );
     if (res.ok) {
@@ -53,7 +55,9 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
         addr.state,
       ].filter(Boolean);
 
-      const formatted = parts.length > 0 ? parts.join(', ') : (data.display_name?.split(',').slice(0, 3).join(',') || `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+      const formatted = parts.length > 0
+        ? parts.join(', ')
+        : (data.display_name?.split(',').slice(0, 3).join(',') || `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       geocodeCache.set(cacheKey, formatted);
       if (typeof window !== 'undefined') {
         sessionStorage.setItem(`geo_${cacheKey}`, formatted);
@@ -85,63 +89,87 @@ export function useGPS(options: UseGPSOptions = {}) {
   const [permissionStatus, setPermissionStatus] = useState<'granted' | 'denied' | 'prompt' | 'unknown'>(getInitialPermissionStatus);
   const [isTracking, setIsTracking] = useState(false);
   const watchIdRef = useRef<number | null>(null);
+  const latestFixRef = useRef<GPSCoordinates | null>(null);
   const mountedRef = useRef(true);
 
-  // Get current position with quick fallback
+  // Update both state and ref for 0ms latency access
+  const updateCoordinates = useCallback((coords: GPSCoordinates) => {
+    latestFixRef.current = coords;
+    if (mountedRef.current) {
+      setCoordinates(coords);
+      setError(null);
+    }
+    try {
+      sessionStorage.setItem('last_gps_fix', JSON.stringify(coords));
+    } catch {}
+    options.onSuccess?.(coords);
+  }, [options]);
+
+  // High-accuracy multi-sample GPS acquisition
   const getCurrentPosition = useCallback(async (): Promise<GPSCoordinates> => {
-    return new Promise((resolve) => {
-      if (typeof window === 'undefined' || !navigator.geolocation) {
-        const fallback: GPSCoordinates = {
-          latitude: 28.6139,
-          longitude: 77.2090,
-          accuracy: 100,
-          timestamp: Date.now(),
-        };
-        resolve(fallback);
-        return;
+    // If we already have a warm, accurate GPS fix from background watch (< 10 seconds old and accuracy <= 25m), use it immediately!
+    if (
+      latestFixRef.current &&
+      Date.now() - latestFixRef.current.timestamp < 10000 &&
+      latestFixRef.current.accuracy <= 25
+    ) {
+      return latestFixRef.current;
+    }
+
+    try {
+      const accurateFix = await getAccurateGPSPosition({
+        desiredAccuracy: 20, // Aim for <= 20 meters accuracy
+        maxWaitMs: 6000, // Wait up to 6 seconds for satellite lock
+        timeout: 12000,
+      });
+
+      const result: GPSCoordinates = {
+        latitude: accurateFix.latitude,
+        longitude: accurateFix.longitude,
+        accuracy: accurateFix.accuracy,
+        timestamp: accurateFix.timestamp,
+        altitude: accurateFix.altitude,
+        altitudeAccuracy: accurateFix.altitudeAccuracy,
+        heading: accurateFix.heading,
+        speed: accurateFix.speed,
+        isHighAccuracy: accurateFix.isHighAccuracy,
+      };
+
+      updateCoordinates(result);
+      return result;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to get accurate GPS location';
+      if (mountedRef.current) setError(errMsg);
+
+      // Check if we have any cached fix before failing
+      if (latestFixRef.current) {
+        return latestFixRef.current;
       }
-
-      let isResolved = false;
-
-      const finish = (coords: GPSCoordinates) => {
-        if (isResolved) return;
-        isResolved = true;
-        if (mountedRef.current) {
-          setCoordinates(coords);
-          setError(null);
-        }
-        try {
-          sessionStorage.setItem('last_gps_fix', JSON.stringify(coords));
-        } catch {}
-        options.onSuccess?.(coords);
-        resolve(coords);
-      };
-
-      // Fallback function when GPS fails
-      const fallbackResolve = () => {
-        try {
-          const cached = sessionStorage.getItem('last_gps_fix');
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed?.latitude && parsed?.longitude) {
-              finish({ ...parsed, timestamp: Date.now() });
-              return;
-            }
+      try {
+        const cached = sessionStorage.getItem('last_gps_fix');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.latitude && parsed?.longitude) {
+            return { ...parsed, timestamp: Date.now() };
           }
-        } catch {}
+        }
+      } catch {}
 
-        finish({
-          latitude: 28.613939,
-          longitude: 77.209021,
-          accuracy: 50,
-          timestamp: Date.now(),
-        });
-      };
+      throw err;
+    }
+  }, [updateCoordinates]);
 
-      // 1. First attempt: High accuracy GPS with 4s timeout
-      navigator.geolocation.getCurrentPosition(
+  // Continuous background tracking for instant GPS warmth
+  const startTracking = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+    setIsTracking(true);
+    try {
+      watchIdRef.current = navigator.geolocation.watchPosition(
         (pos) => {
-          finish({
+          const coords: GPSCoordinates = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
@@ -150,74 +178,26 @@ export function useGPS(options: UseGPSOptions = {}) {
             altitudeAccuracy: pos.coords.altitudeAccuracy || null,
             heading: pos.coords.heading || null,
             speed: pos.coords.speed || null,
-          });
+            isHighAccuracy: pos.coords.accuracy <= 25,
+          };
+          updateCoordinates(coords);
         },
-        (err1) => {
-          console.warn('High-accuracy GPS attempt failed, trying low accuracy...', err1.message);
-          // 2. Second attempt: Low accuracy / cached GPS with 3s timeout
-          navigator.geolocation.getCurrentPosition(
-            (pos2) => {
-              finish({
-                latitude: pos2.coords.latitude,
-                longitude: pos2.coords.longitude,
-                accuracy: pos2.coords.accuracy,
-                timestamp: pos2.timestamp,
-              });
-            },
-            (err2) => {
-              console.warn('Low accuracy GPS also failed, using fallback location', err2.message);
-              fallbackResolve();
-            },
-            {
-              enableHighAccuracy: false,
-              timeout: 3000,
-              maximumAge: 60000,
-            }
-          );
+        (err) => {
+          if (mountedRef.current) {
+            setError(getGeolocationErrorMessage(err));
+          }
+          options.onError?.(err);
         },
         {
           enableHighAccuracy: true,
-          timeout: 4000,
-          maximumAge: 5000,
+          timeout: 15000,
+          maximumAge: 0,
         }
       );
-
-      // Safety timeout after 8 seconds total
-      setTimeout(() => {
-        if (!isResolved) {
-          console.warn('GPS overall timeout hit, completing with fallback');
-          fallbackResolve();
-        }
-      }, 8000);
-    });
-  }, [options]);
-
-  const startTracking = useCallback(() => {
-    if (!navigator.geolocation) return;
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
+    } catch (e) {
+      console.warn('Could not start GPS watch tracking', e);
     }
-    setIsTracking(true);
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const coords: GPSCoordinates = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          timestamp: pos.timestamp,
-        };
-        if (mountedRef.current) {
-          setCoordinates(coords);
-          setError(null);
-        }
-        options.onSuccess?.(coords);
-      },
-      (err) => {
-        if (mountedRef.current) setError(err.message);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
-    );
-  }, [options]);
+  }, [options, updateCoordinates]);
 
   const stopTracking = useCallback(() => {
     if (watchIdRef.current !== null) {
@@ -238,8 +218,11 @@ export function useGPS(options: UseGPSOptions = {}) {
     }
   }, [getCurrentPosition]);
 
+  // Auto-start high accuracy tracking on mount so GPS hardware is warm
   useEffect(() => {
     mountedRef.current = true;
+    startTracking();
+
     if ('permissions' in navigator) {
       navigator.permissions.query({ name: 'geolocation' }).then((result) => {
         if (mountedRef.current) setPermissionStatus(result.state);
@@ -248,13 +231,14 @@ export function useGPS(options: UseGPSOptions = {}) {
         });
       }).catch(() => {});
     }
+
     return () => {
       mountedRef.current = false;
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, []);
+  }, [startTracking]);
 
   return {
     coordinates,

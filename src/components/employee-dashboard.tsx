@@ -802,7 +802,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         const coords = await getCurrentPosition();
         const actionLabel = type === 'in' ? 'punch in' : 'punch out';
         const violationMessage = getGeofenceViolationMessage(
-          { lat: coords.latitude, lng: coords.longitude },
+          { lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy },
           { lat: user.geofenceLat, lng: user.geofenceLng, radius: user.geofenceRadius || 100 },
           actionLabel,
         );
@@ -816,10 +816,10 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
           });
           return;
         }
-      } catch {
+      } catch (err) {
         addNotification({
           title: t.attendance.punchFailed || 'Punch Failed',
-          body: t.attendance.gpsPermissionRequired,
+          body: err instanceof Error ? err.message : t.attendance.gpsPermissionRequired,
           type: 'error',
           priority: 'high',
         });
@@ -846,7 +846,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     setIsLoading(true);
 
     try {
-      // 1. Get GPS coordinates (check hook cache first for 0ms latency)
+      // 1. Get GPS coordinates (high accuracy check)
       let finalCoords = (coordinates && coordinates.latitude && coordinates.longitude)
         ? coordinates
         : null;
@@ -854,13 +854,16 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
       if (!finalCoords) {
         try {
           finalCoords = await getCurrentPosition();
-        } catch {
-          finalCoords = { latitude: 28.613939, longitude: 77.209021, accuracy: 50, timestamp: Date.now() };
+        } catch (gpsErr) {
+          console.warn('GPS accurate fix error:', gpsErr);
+          if (coordinates?.latitude) {
+            finalCoords = coordinates;
+          }
         }
       }
 
       if (!finalCoords || !finalCoords.latitude) {
-        finalCoords = { latitude: 28.613939, longitude: 77.209021, accuracy: 50, timestamp: Date.now() };
+        throw new Error('Accurate GPS location required for attendance. Please turn ON GPS and try again.');
       }
 
       const now = new Date();
