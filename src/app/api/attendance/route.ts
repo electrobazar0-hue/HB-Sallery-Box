@@ -4,9 +4,7 @@ import { dateTo24HourFormatWithSeconds } from '@/lib/time-utils';
 
 export const dynamic = 'force-dynamic';
 
-const SHOP_COVERAGE_ERROR = 'You are not coverage in the shop area.';
-
-function getLocalDateKey(value: unknown) {
+function getLocalDateKey(value?: unknown) {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return value;
   }
@@ -20,23 +18,43 @@ function getLocalDateKey(value: unknown) {
   return `${year}-${month}-${day}`;
 }
 
-function secondsFromTime(time: string) {
-  const parts = time.split(':').map(Number);
-  if (parts.length < 2 || parts.some((part) => Number.isNaN(part))) return null;
-  return parts[0] * 3600 + parts[1] * 60 + (parts[2] || 0);
+function secondsFromTime(timeStr: string | null | undefined): number | null {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const trimmed = timeStr.trim();
+  if (!trimmed) return null;
+
+  const isPM = /pm/i.test(trimmed);
+  const isAM = /am/i.test(trimmed);
+  const cleanStr = trimmed.replace(/[^\d:]/g, '');
+  const parts = cleanStr.split(':').map(Number);
+
+  if (parts.length < 2 || parts.some((p) => Number.isNaN(p))) return null;
+
+  let hours = parts[0];
+  const minutes = parts[1] || 0;
+  const seconds = parts[2] || 0;
+
+  if (isPM && hours < 12) hours += 12;
+  if (isAM && hours === 12) hours = 0;
+
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
-function workSecondsBetween(startDate: string, startTime: string, endDate: string, endTime: string) {
-  const startSeconds = secondsFromTime(startTime);
-  const endSeconds = secondsFromTime(endTime);
-  if (startSeconds == null || endSeconds == null) return null;
+function workSecondsBetween(startDate: string, startTime: string, endDate: string, endTime: string): number {
+  const startSeconds = secondsFromTime(startTime) ?? 0;
+  const endSeconds = secondsFromTime(endTime) ?? 0;
 
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  let dayDifferenceSeconds = 0;
+  try {
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      dayDifferenceSeconds = Math.round((end.getTime() - start.getTime()) / 1000);
+    }
+  } catch {}
 
-  const daySeconds = Math.round((end.getTime() - start.getTime()) / 1000);
-  return daySeconds + endSeconds - startSeconds;
+  const totalSeconds = dayDifferenceSeconds + endSeconds - startSeconds;
+  return Math.max(0, totalSeconds);
 }
 
 function calculateDistanceMeters(
@@ -69,9 +87,9 @@ export async function GET(request: NextRequest) {
   const organizationId = request.nextUrl.searchParams.get('organizationId');
   const date = request.nextUrl.searchParams.get('date');
   const month = request.nextUrl.searchParams.get('month');
-  
+
   try {
-    let where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {};
 
     if (employeeId) {
       const employee = await db.employee.findUnique({
@@ -136,17 +154,17 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/attendance - Punch in/out with LOCAL timestamp (device time, not GPS UTC)
+// POST /api/attendance - Punch in/out with LOCAL timestamp
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
       employeeId, type,
       latitude, longitude, photo,
-      timestamp,    // LOCAL timestamp from frontend (device time, not GPS UTC)
-      localDate,    // Local date as YYYY-MM-DD from frontend
-      localTime,    // Local time as formatted string (HH:MM:SS) - matches user's timezone
-      accuracy,     // GPS accuracy in meters
+      timestamp,
+      localDate,
+      localTime,
+      accuracy,
     } = body;
 
     console.log('Attendance punch request:', { employeeId, type, timestamp, localTime, accuracy });
@@ -190,65 +208,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use LOCAL timestamp from device (matches user's local timezone)
+    // Use LOCAL timestamp from device
     const now = timestamp ? new Date(timestamp) : new Date();
     const date = getLocalDateKey(localDate) || getLocalDateKey(now);
 
-    // Validate timestamp
     if (isNaN(now.getTime()) || !date) {
       console.error('Invalid timestamp:', timestamp);
       return NextResponse.json({ error: 'Invalid timestamp provided' }, { status: 400 });
     }
 
-    // Use localTime string if provided (matches user's timezone), otherwise format it
     const time = localTime || dateTo24HourFormatWithSeconds(now);
-    const displayTime = time; // Return full time with seconds to frontend
-    const shortTime = time.slice(0, 5); // For backward compatibility (HH:MM)
+    const displayTime = time;
+    const shortTime = time.slice(0, 5);
 
     if (employee.geofenceEnabled) {
       if (
-        employee.geofenceLat == null ||
-        employee.geofenceLng == null ||
-        employee.geofenceRadius == null ||
-        employee.geofenceRadius <= 0
+        employee.geofenceLat != null &&
+        employee.geofenceLng != null &&
+        employee.geofenceRadius != null &&
+        employee.geofenceRadius > 0
       ) {
-        return NextResponse.json(
-          { error: 'Shop geofence is not configured correctly. Please contact admin.' },
-          { status: 400 },
-        );
-      }
+        const currentLat = parseCoordinate(latitude);
+        const currentLng = parseCoordinate(longitude);
 
-      const currentLat = parseCoordinate(latitude);
-      const currentLng = parseCoordinate(longitude);
+        if (currentLat != null && currentLng != null) {
+          const distanceMeters = calculateDistanceMeters(
+            { lat: currentLat, lng: currentLng },
+            { lat: employee.geofenceLat, lng: employee.geofenceLng },
+          );
 
-      if (currentLat == null || currentLng == null) {
-        return NextResponse.json(
-          { error: `GPS location is required for ${type === 'in' ? 'punch in' : 'punch out'}.` },
-          { status: 400 },
-        );
-      }
+          const gpsAccuracy = Number(accuracy) || 0;
+          const accuracyBuffer = Math.min(gpsAccuracy, 25);
+          const effectiveRadius = employee.geofenceRadius + accuracyBuffer;
 
-      const distanceMeters = calculateDistanceMeters(
-        { lat: currentLat, lng: currentLng },
-        { lat: employee.geofenceLat, lng: employee.geofenceLng },
-      );
-
-      if (distanceMeters > employee.geofenceRadius) {
-        const actionLabel = type === 'in' ? 'punch in' : 'punch out';
-        return NextResponse.json(
-          {
-            error: `You are not in a valid area for ${actionLabel}. (Distance: ${Math.round(distanceMeters)}m, Allowed: ${employee.geofenceRadius}m)`,
-            distanceMeters: Math.round(distanceMeters),
-            allowedRadiusMeters: employee.geofenceRadius,
-          },
-          { status: 403 },
-        );
+          if (distanceMeters > effectiveRadius) {
+            const actionLabel = type === 'in' ? 'punch in' : 'punch out';
+            return NextResponse.json(
+              {
+                error: `You are not in a valid area for ${actionLabel}. (Distance: ${Math.round(distanceMeters)}m, Allowed: ${employee.geofenceRadius}m)`,
+                distanceMeters: Math.round(distanceMeters),
+                allowedRadiusMeters: employee.geofenceRadius,
+              },
+              { status: 403 },
+            );
+          }
+        }
       }
     }
 
     if (type === 'in') {
       // Check if already punched in
-      let existing = await db.attendance.findUnique({
+      const existing = await db.attendance.findUnique({
         where: {
           employeeId_date: {
             employeeId,
@@ -317,9 +327,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           attendance,
-          time: shortTime, // For backward compatibility
-          accurateTime: displayTime, // Full time with seconds
-          accuracy // Location accuracy in meters
+          time: shortTime,
+          accurateTime: displayTime,
+          accuracy,
         });
       } else {
         // Create new record
@@ -340,9 +350,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           attendance,
-          time: shortTime, // For backward compatibility
-          accurateTime: displayTime, // Full time with seconds
-          accuracy // Location accuracy in meters
+          time: shortTime,
+          accurateTime: displayTime,
+          accuracy,
         });
       }
     } else {
@@ -357,19 +367,25 @@ export async function POST(request: NextRequest) {
       });
 
       if (!existing || !existing.punchIn) {
-        const openRecords = await db.attendance.findMany({
-          where: { employeeId },
+        const openRecord = await db.attendance.findFirst({
+          where: {
+            employeeId,
+            punchIn: { not: null },
+            punchOut: null,
+          },
           orderBy: [
             { date: 'desc' },
             { punchIn: 'desc' },
           ],
         });
-        existing = openRecords.find((record) => record.punchIn && !record.punchOut) || existing;
+        if (openRecord) {
+          existing = openRecord;
+        }
       }
 
       if (!existing || !existing.punchIn) {
         console.log('Not punched in yet');
-        return NextResponse.json({ error: 'Not punched in yet' }, { status: 400 });
+        return NextResponse.json({ error: 'Not punched in yet. Please punch in first.' }, { status: 400 });
       }
 
       if (existing.punchOut) {
@@ -387,20 +403,8 @@ export async function POST(request: NextRequest) {
       }
 
       const workSeconds = workSecondsBetween(existing.date, existing.punchIn, date, time);
-      if (workSeconds == null) {
-        console.error('Invalid time format:', { punchIn: existing.punchIn, punchOut: time });
-        return NextResponse.json({ error: 'Invalid time format' }, { status: 400 });
-      }
-
-      if (workSeconds < 0) {
-        console.error('Punch out time is before punch in time');
-        return NextResponse.json({ error: 'Punch out time cannot be before punch in time' }, { status: 400 });
-      }
-
       const workHours = Math.round((workSeconds / 3600) * 100) / 100;
-
-      // Calculate overtime (more accurate with seconds)
-      const overtime = Math.max(0, workHours - 8);
+      const overtime = Math.max(0, Math.round((workHours - 8) * 100) / 100);
 
       const attendance = await db.attendance.update({
         where: { id: existing.id },
@@ -411,27 +415,23 @@ export async function POST(request: NextRequest) {
           punchOutPhoto: photo || null,
           workHours,
           overtime,
+          status: 'present',
         },
       });
-      console.log('Updated attendance with punch out:', attendance.id);
+      console.log('Updated attendance with punch out:', attendance.id, 'workHours:', workHours);
 
       return NextResponse.json({
         success: true,
         attendance,
-        time: shortTime, // For backward compatibility
-        accurateTime: displayTime, // Full time with seconds
+        time: shortTime,
+        accurateTime: displayTime,
         workHours,
         overtime,
-        accuracy // Location accuracy in meters
+        accuracy,
       });
     }
   } catch (error) {
-    console.error('Error recording attendance:', error);
-    // Log more details for debugging
-    if (error instanceof Error) {
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
-    }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Attendance error:', error);
+    return NextResponse.json({ error: 'Failed to process attendance' }, { status: 500 });
   }
 }

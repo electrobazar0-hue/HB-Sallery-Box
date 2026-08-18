@@ -969,7 +969,7 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         body: JSON.stringify(payload),
       });
 
-      if (!data || data._httpError) {
+      if (!data || data._httpError || !data.success) {
         throw new Error(data?.error || 'Failed to punch in/out');
       }
 
@@ -1012,6 +1012,12 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
     } catch (error) {
       console.error('Punch error:', error);
       const errorMessage = error instanceof Error ? error.message : t.attendance.punchFailedMessage || 'Failed to punch in/out';
+
+      // Rollback to server state
+      try {
+        await refreshAttendance();
+      } catch {}
+
       try {
         addNotification({
           title: t.attendance.punchFailed || 'Punch Failed',
@@ -1021,7 +1027,6 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
         });
       } catch (notifError) {
         console.error('Failed to add error notification:', notifError);
-        // Fallback to alert
         alert(errorMessage);
       }
     } finally {
