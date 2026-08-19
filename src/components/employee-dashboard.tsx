@@ -1930,11 +1930,11 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                           </div>
                         </div>
 
-                        {/* Disabled Completion Button */}
-                        <Button size="lg" disabled className="w-full bg-white/15 text-white/90 cursor-not-allowed border border-white/20 font-medium">
-                          <Check className="h-5 w-5 mr-2 text-emerald-400" />
-                          {t.attendance.attendanceCompleted}
-                        </Button>
+                        {/* Status Notice: Attendance 100% completed - No punch buttons */}
+                        <div className="p-3.5 bg-emerald-500/20 border border-emerald-400/40 rounded-xl flex items-center justify-center gap-2.5 text-sm font-bold text-emerald-300">
+                          <Check className="h-5 w-5 text-emerald-400" />
+                          <span>{t.attendance.attendanceCompleted} ({todayAttendanceRecord.workHours}h)</span>
+                        </div>
                       </CardContent>
                     </Card>
                   ) : isPunchedInToday && todayAttendanceRecord ? (
