@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useGPS, reverseGeocode, getGoogleMapsUrl } from '@/hooks/use-gps';
 import { useNotifications } from '@/hooks/use-notifications';
+import { useLiveTracking } from '@/hooks/use-live-tracking';
 import { CameraCapture } from '@/components/camera-capture';
 import { to12HourFormat, to12HourFormatWithSeconds, dateTo12HourFormat, dateTo12HourFormatWithSeconds, dateTo24HourFormatWithSeconds, formatTimeWithSeconds } from '@/lib/time-utils';
 import { fetchJSON } from '@/lib/utils';
@@ -680,6 +681,14 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
   const isPunchedInToday = Boolean(todayAttendanceRecord?.punchIn && !todayAttendanceRecord?.punchOut);
   const isAttendanceCompletedToday = Boolean(todayAttendanceRecord?.punchIn && todayAttendanceRecord?.punchOut);
   const isNotPunchedInToday = !todayAttendanceRecord || !todayAttendanceRecord.punchIn;
+
+  // Live location tracking during active punch session
+  const { isTrackingActive } = useLiveTracking({
+    employeeId: user?.id,
+    organizationId: user?.organizationId,
+    isPunchedIn: isPunchedInToday,
+    attendanceId: todayAttendanceRecord?.id,
+  });
 
   // Live working duration timer
   const [workingDuration, setWorkingDuration] = useState<string>('00:00:00');
@@ -1988,9 +1997,17 @@ export function EmployeeDashboard({ onLogout, onSettings }: EmployeeDashboardPro
                                 />
                               </div>
                             )}
-                            <p className="text-[11px] text-emerald-200">
-                              {permissionStatus === 'granted' ? `✓ ${t.attendance.gpsActive}` : `⚠ ${t.attendance.gpsRequired}`}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              <p className="text-[11px] text-emerald-200">
+                                {permissionStatus === 'granted' ? `✓ ${t.attendance.gpsActive}` : `⚠ ${t.attendance.gpsRequired}`}
+                              </p>
+                              {isTrackingActive && (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] bg-emerald-900/60 text-emerald-200 border border-emerald-400/30">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Live Location Active
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 

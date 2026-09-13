@@ -6,7 +6,7 @@ import {
   LogOut, Users, Clock, DollarSign, Calendar,
   Bell, ChevronRight, FileText, Settings,
   Home, Menu, X, Star, MessageSquare, Edit,
-  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle, MapPin, Navigation, ExternalLink
+  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle, MapPin, Navigation, ExternalLink, Building
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +34,10 @@ import { useNotifications, NotificationData } from '@/hooks/use-notifications';
 import { useLanguageStore } from '@/lib/i18n';
 import { fetchJSON } from '@/lib/utils';
 import { getAccurateGPSPosition } from '@/lib/gps-accuracy';
+import { BranchManagement } from '@/components/branch-management';
+import { AdminLiveMap } from '@/components/admin-live-map';
+import { AttendanceKiosk } from '@/components/attendance-kiosk';
+import { ReportsManagement } from '@/components/reports-management';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -221,6 +225,12 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const [employeeEvents, setEmployeeEvents] = useState<EmployeeEventsData | null>(null);
   const [showPaySalary, setShowPaySalary] = useState(false);
   const [showIncentives, setShowIncentives] = useState(false);
+  const [showBranches, setShowBranches] = useState(false);
+  const [showLiveMap, setShowLiveMap] = useState(false);
+  const [showReports, setShowReports] = useState(false);
+  const [showKiosk, setShowKiosk] = useState(false);
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
   const [showAllLeaves, setShowAllLeaves] = useState(false);
   const [leaveFilter, setLeaveFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [showApproveDialog, setShowApproveDialog] = useState(false);
@@ -272,6 +282,10 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     { id: 'home', label: t.dashboard.home, icon: Home },
     { id: 'employees', label: t.dashboard.employees, icon: Users },
     { id: 'attendance', label: t.dashboard.attendance, icon: Clock },
+    { id: 'live_map', label: 'Live GPS Tracking', icon: Navigation },
+    { id: 'branches', label: 'Branches', icon: Building },
+    { id: 'reports', label: 'Reports & Export', icon: FileText },
+    { id: 'kiosk', label: 'Attendance Kiosk', icon: ShieldCheck },
     { id: 'activities', label: t.dashboard.activities, icon: Activity },
     { id: 'leaves', label: t.leave.leaveRequests, icon: Calendar },
     { id: 'expenses', label: t.dashboard.expenseClaims, icon: Receipt },
@@ -289,6 +303,18 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
     let mounted = true;
     
     const fetchData = async () => {
+      // Fetch branches
+      if (user.organizationId) {
+        try {
+          const bData = await fetchJSON<{ branches?: { id: string; name: string }[] }>(
+            `/api/branches?organizationId=${user.organizationId}`
+          );
+          if (mounted && bData?.branches) {
+            setBranches(bData.branches);
+          }
+        } catch {}
+      }
+
       // Fetch employees - NO DEMO DATA, only real data from database
       try {
         const data = await fetchJSON(`/api/employees?adminId=${user.id}`, { cache: 'no-store' });
@@ -297,7 +323,6 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         }
       } catch (error) {
         console.error('Error fetching employees:', error);
-        // Don't set demo data - keep empty array for fresh admin
         if (mounted) {
           setEmployees([]);
         }
@@ -902,8 +927,12 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const handleMenuClick = (id: string) => {
     switch (id) {
       case 'settings': onSettings(); break;
-      case 'employees': setShowEmployeeList(true); setActiveTab(id); break;  // Show employee list
+      case 'employees': setShowEmployeeList(true); setActiveTab(id); break;
       case 'attendance': setShowAttendance(true); setActiveTab(id); break;
+      case 'live_map': setShowLiveMap(true); setActiveTab(id); break;
+      case 'branches': setShowBranches(true); setActiveTab(id); break;
+      case 'reports': setShowReports(true); setActiveTab(id); break;
+      case 'kiosk': setShowKiosk(true); setActiveTab(id); break;
       case 'activities': setShowEmployeeActivities(true); setActiveTab(id); break;
       case 'leaves': setShowLeaves(true); setActiveTab(id); break;
       case 'salary': setShowSalaryManagement(true); setActiveTab(id); break;
@@ -1084,6 +1113,30 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                 </div>
               </button>
               <span className="font-bold text-lg hidden sm:inline">{user?.organizationName || 'HB Sallery Box'}</span>
+            </div>
+
+            {/* Branch Selector Dropdown */}
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-muted/60 rounded-lg border border-border text-xs">
+              <Building className="h-3.5 w-3.5 text-teal-500" />
+              <select
+                value={selectedBranchId}
+                onChange={(e) => {
+                  if (e.target.value === '__add_new__') {
+                    setShowBranches(true);
+                  } else {
+                    setSelectedBranchId(e.target.value);
+                  }
+                }}
+                className="bg-transparent border-none text-xs font-medium focus:outline-none cursor-pointer text-foreground"
+              >
+                <option value="all">All Branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+                <option value="__add_new__">+ Add Branch</option>
+              </select>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2476,6 +2529,48 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Branches Management Dialog */}
+      <Dialog open={showBranches} onOpenChange={setShowBranches}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <BranchManagement
+            organizationId={user?.organizationId || ''}
+            onBranchChange={async () => {
+              try {
+                const res = await fetchJSON<{ branches?: { id: string; name: string }[] }>(
+                  `/api/branches?organizationId=${user?.organizationId}`
+                );
+                if (res?.branches) setBranches(res.branches);
+              } catch {}
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Live Map Tracking Monitor Dialog */}
+      <Dialog open={showLiveMap} onOpenChange={setShowLiveMap}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
+          <AdminLiveMap organizationId={user?.organizationId || ''} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Reports & Data Export Dialog */}
+      <Dialog open={showReports} onOpenChange={setShowReports}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <ReportsManagement organizationId={user?.organizationId || ''} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Attendance Kiosk Mode Dialog */}
+      <Dialog open={showKiosk} onOpenChange={setShowKiosk}>
+        <DialogContent className="max-w-lg p-0 bg-transparent border-0 shadow-none">
+          <AttendanceKiosk
+            organizationId={user?.organizationId || ''}
+            organizationName={user?.organizationName || 'Salary Box'}
+            onExit={() => setShowKiosk(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>

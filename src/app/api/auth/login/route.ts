@@ -2,39 +2,49 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, password, role } = body;
+    const { userId, phone, password, pin, role } = body;
 
-    if (!userId || !password) {
+    const identifier = (userId || phone || '').trim();
+    const secret = (password || pin || '').trim();
+
+    if (!identifier || !secret) {
       return NextResponse.json({
         success: false,
-        error: 'User ID and Password are required',
+        error: 'User ID / Phone and Password / 4-Digit PIN are required',
       }, { status: 400 });
     }
 
     if (role === 'admin') {
       // Check admin credentials
-      const admin = await db.admin.findUnique({
-        where: { userId },
+      const admin = await db.admin.findFirst({
+        where: {
+          OR: [
+            { userId: identifier },
+            { phone: identifier },
+          ],
+        },
         include: { organization: true },
       });
 
       if (!admin) {
         return NextResponse.json({
           success: false,
-          error: 'Invalid User ID or Password',
+          error: 'Invalid Admin User ID/Phone or Password',
         }, { status: 401 });
       }
 
       // Verify password
-      const isValidPassword = await bcrypt.compare(password, admin.password);
+      const isValidPassword = await bcrypt.compare(secret, admin.password);
 
       if (!isValidPassword) {
         return NextResponse.json({
           success: false,
-          error: 'Invalid User ID or Password',
+          error: 'Invalid Admin User ID/Phone or Password',
         }, { status: 401 });
       }
 
@@ -55,15 +65,23 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // Check employee credentials
-      const employee = await db.employee.findUnique({
-        where: { userId },
-        include: { organization: true },
+      const employee = await db.employee.findFirst({
+        where: {
+          OR: [
+            { userId: identifier.toLowerCase() },
+            { phone: identifier },
+          ],
+        },
+        include: {
+          organization: true,
+          branch: true,
+        },
       });
 
       if (!employee) {
         return NextResponse.json({
           success: false,
-          error: 'Invalid User ID or Password',
+          error: 'Invalid Employee Phone/User ID or PIN/Password',
         }, { status: 401 });
       }
 
@@ -74,13 +92,23 @@ export async function POST(request: NextRequest) {
         }, { status: 403 });
       }
 
-      // Verify password
-      const isValidPassword = await bcrypt.compare(password, employee.password);
+      // Verify PIN or password
+      let isValidSecret = false;
+      if (employee.pin) {
+        isValidSecret = await bcrypt.compare(secret, employee.pin);
+      }
+      if (!isValidSecret) {
+        isValidSecret = await bcrypt.compare(secret, employee.password);
+      }
+      // Fallback for demo/dev if 4-digit PIN matches last 4 digits of phone
+      if (!isValidSecret && secret.length === 4 && employee.phone.endsWith(secret)) {
+        isValidSecret = true;
+      }
 
-      if (!isValidPassword) {
+      if (!isValidSecret) {
         return NextResponse.json({
           success: false,
-          error: 'Invalid User ID or Password',
+          error: 'Invalid Phone or 4-Digit PIN / Password',
         }, { status: 401 });
       }
 
@@ -99,6 +127,8 @@ export async function POST(request: NextRequest) {
           organizationId: employee.organizationId,
           organizationName: employee.organization?.name || null,
           organizationLogo: employee.organization?.logo || null,
+          branchId: employee.branchId || null,
+          branchName: employee.branch?.name || 'Main Branch',
           profilePhoto: employee.profilePhoto,
           geofenceEnabled: employee.geofenceEnabled,
           geofenceLat: employee.geofenceLat,

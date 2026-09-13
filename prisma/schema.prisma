@@ -24,6 +24,46 @@ model Admin {
   organization     Organization?
 }
 
+model Organization {
+  id                  String                    @id @default(cuid())
+  name                String
+  address             String
+  gst                 String?
+  logo                String?
+  adminId             String                    @unique
+  attendanceSettings  String?                   // JSON config: punchRules, lateRules, breaks, autoLiveTrack, kiosk
+  salarySettings      String?                   // JSON config: CTC, cycle, PF, TDS rules
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  admin               Admin                     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  announcements       Announcement[]
+  employees           Employee[]
+  holidays            Holiday[]
+  incentiveCategories IncentiveCategory[]
+  shifts              Shift[]
+  branches            Branch[]
+  salaryTemplates     SalaryTemplate[]
+  customFields        CustomField[]
+  auditLogs           AuditLog[]
+}
+
+model Branch {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  address        String
+  latitude       Float?
+  longitude      Float?
+  geofenceRadius Float        @default(150)
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees      Employee[]
+
+  @@index([organizationId])
+}
+
 model Announcement {
   id             String       @id @default(cuid())
   title          String
@@ -36,41 +76,44 @@ model Announcement {
 }
 
 model Attendance {
-  id            String   @id @default(cuid())
-  employeeId    String
-  date          String
-  punchIn       String?
-  punchOut      String?
-  punchInLat    Float?
-  punchInLng    Float?
-  punchOutLat   Float?
-  punchOutLng   Float?
-  punchInPhoto  String?
-  punchOutPhoto String?
-  workHours     Float    @default(0)
-  overtime      Float    @default(0)
-  status        String   @default("present")
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id               String                    @id @default(cuid())
+  employeeId       String
+  date             String
+  punchIn          String?
+  punchOut         String?
+  punchInLat       Float?
+  punchInLng       Float?
+  punchOutLat      Float?
+  punchOutLng      Float?
+  punchInPhoto     String?
+  punchOutPhoto    String?
+  workHours        Float                     @default(0)
+  overtime         Float                     @default(0)
+  status           String                    @default("present")
+  notes            String?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  employee         Employee                  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  trackingSessions LocationTrackingSession[]
+  breaks           BreakRecord[]
 
   @@unique([employeeId, date])
 }
 
 model Employee {
-  id                 String              @id @default(cuid())
-  userId             String              @unique
+  id                 String                    @id @default(cuid())
+  userId             String                    @unique
   password           String
   securityPassword   String
+  pin                String?                   // 4-digit bcrypt-hashed PIN for staff login without OTP
   name               String
-  phone              String              @unique
+  phone              String                    @unique
   email              String?
   address            String?
   designation        String?
   department         String?
-  salary             Float               @default(0)
-  overtimeRate       Float               @default(0)
+  salary             Float                     @default(0)
+  overtimeRate       Float                     @default(0)
   aadharNumber       String?
   panNumber          String?
   accountNumber      String?
@@ -78,25 +121,152 @@ model Employee {
   upiId              String?
   organizationId     String
   adminId            String
-  biometricEnabled   Boolean             @default(false)
+  branchId           String?
+  salaryTemplateId   String?
+  biometricEnabled   Boolean                   @default(false)
   profilePhoto       String?
-  active             Boolean             @default(true)
-  starOfMonth        Boolean             @default(false)
-  geofenceEnabled    Boolean             @default(false)
+  active             Boolean                   @default(true)
+  starOfMonth        Boolean                   @default(false)
+  geofenceEnabled    Boolean                   @default(false)
   geofenceLat        Float?
   geofenceLng        Float?
-  geofenceRadius     Float?              @default(100)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  geofenceRadius     Float?                    @default(100)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  admin              Admin                     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch             Branch?                   @relation(fields: [branchId], references: [id])
+  salaryTemplate     SalaryTemplate?           @relation(fields: [salaryTemplateId], references: [id])
   attendance         Attendance[]
-  admin              Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   incentives         EmployeeIncentive[]
   shifts             EmployeeShift[]
   expenses           Expense[]
   leaves             Leave[]
   payrollAdjustments PayrollAdjustment[]
   salaryRecords      SalaryRecord[]
+  trackingSessions   LocationTrackingSession[]
+  breaks             BreakRecord[]
+  customFieldValues  CustomFieldValue[]
+
+  @@index([branchId])
+  @@index([organizationId])
+}
+
+model LocationTrackingSession {
+  id             String           @id @default(cuid())
+  employeeId     String
+  organizationId String
+  attendanceId   String?
+  startedAt      DateTime         @default(now())
+  endedAt        DateTime?
+  status         String           @default("active") // "active" | "ended"
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendance     Attendance?      @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  updates        LocationUpdate[]
+
+  @@index([employeeId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model LocationUpdate {
+  id        String                  @id @default(cuid())
+  sessionId String
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  timestamp DateTime                @default(now())
+  session   LocationTrackingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([timestamp])
+}
+
+model BreakRecord {
+  id              String      @id @default(cuid())
+  employeeId      String
+  attendanceId    String?
+  startTime       String      // HH:MM:SS
+  endTime         String?     // HH:MM:SS
+  type            String      @default("lunch") // "lunch" | "tea" | "personal"
+  durationMinutes Float       @default(0)
+  status          String      @default("active") // "active" | "completed"
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  employee        Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  attendance      Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([attendanceId])
+}
+
+model SalaryTemplate {
+  id              String       @id @default(cuid())
+  organizationId  String
+  name            String
+  basicSalary     Float        @default(0)
+  hra             Float        @default(0)
+  conveyance      Float        @default(0)
+  allowances      Float        @default(0)
+  bonus           Float        @default(0)
+  pfDeduction     Float        @default(0)
+  tdsDeduction    Float        @default(0)
+  otherDeductions Float        @default(0)
+  netSalary       Float        @default(0)
+  active          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees       Employee[]
+
+  @@index([organizationId])
+}
+
+model CustomField {
+  id             String             @id @default(cuid())
+  organizationId String
+  name           String
+  fieldType      String             @default("text") // "text" | "number" | "date" | "dropdown" | "boolean"
+  options        String?            // comma-separated or JSON string for dropdown
+  required       Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values         CustomFieldValue[]
+
+  @@index([organizationId])
+}
+
+model CustomFieldValue {
+  id            String      @id @default(cuid())
+  customFieldId String
+  employeeId    String
+  value         String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([customFieldId, employeeId])
+  @@index([employeeId])
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  actorId        String
+  actorRole      String       @default("admin") // "admin" | "employee" | "system"
+  action         String
+  targetType     String
+  targetId       String?
+  metadata       String?      // JSON details
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([createdAt])
 }
 
 model EmployeeIncentive {
@@ -208,23 +378,6 @@ model Leave {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-}
-
-model Organization {
-  id                  String              @id @default(cuid())
-  name                String
-  address             String
-  gst                 String?
-  logo                String?
-  adminId             String              @unique
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  announcements       Announcement[]
-  employees           Employee[]
-  holidays            Holiday[]
-  incentiveCategories IncentiveCategory[]
-  admin               Admin               @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  shifts              Shift[]
 }
 
 model PayrollAdjustment {

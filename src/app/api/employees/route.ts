@@ -56,21 +56,24 @@ function normalizeGeofenceInput(
   };
 }
 
-// GET /api/employees - Get employees by admin or check by phone/userId
+// GET /api/employees - Get employees by admin, organization, or branch
 export async function GET(request: NextRequest) {
   const adminId = request.nextUrl.searchParams.get('adminId');
   const organizationId = request.nextUrl.searchParams.get('organizationId');
+  const branchId = request.nextUrl.searchParams.get('branchId');
   const phone = request.nextUrl.searchParams.get('phone');
   const userId = request.nextUrl.searchParams.get('userId');
   const employeeId = request.nextUrl.searchParams.get('employeeId');
 
-  // Check if employee exists by phone
+  // Check by phone number
   if (phone) {
     try {
+      const cleanPhone = phone.replace(/\D/g, '');
       const employee = await db.employee.findUnique({
-        where: { phone },
+        where: { phone: cleanPhone },
         include: {
           organization: true,
+          branch: true,
           shifts: {
             include: { shift: true },
           },
@@ -78,7 +81,7 @@ export async function GET(request: NextRequest) {
       });
 
       if (!employee) {
-        return noStoreJson({ exists: false });
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
       }
 
       return noStoreJson({
@@ -92,17 +95,17 @@ export async function GET(request: NextRequest) {
           designation: employee.designation,
           department: employee.department,
           salary: employee.salary,
-          overtimeRate: employee.overtimeRate,
           organizationId: employee.organizationId,
           organizationName: employee.organization?.name || null,
           organizationLogo: employee.organization?.logo || null,
+          branchId: employee.branchId,
+          branchName: employee.branch?.name || 'Main Branch',
           profilePhoto: employee.profilePhoto,
           active: employee.active,
           geofenceEnabled: employee.geofenceEnabled,
           geofenceLat: employee.geofenceLat,
           geofenceLng: employee.geofenceLng,
           geofenceRadius: employee.geofenceRadius,
-          shifts: employee.shifts,
         },
       });
     } catch (error) {
@@ -111,16 +114,23 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Check if employee exists by userId
+  // Check by userId
   if (userId) {
     try {
+      const cleanUserId = userId.trim().toLowerCase();
       const employee = await db.employee.findUnique({
-        where: { userId },
-        include: { organization: true },
+        where: { userId: cleanUserId },
+        include: {
+          organization: true,
+          branch: true,
+          shifts: {
+            include: { shift: true },
+          },
+        },
       });
 
       if (!employee) {
-        return noStoreJson({ exists: false });
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
       }
 
       return noStoreJson({
@@ -137,6 +147,8 @@ export async function GET(request: NextRequest) {
           organizationId: employee.organizationId,
           organizationName: employee.organization?.name || null,
           organizationLogo: employee.organization?.logo || null,
+          branchId: employee.branchId,
+          branchName: employee.branch?.name || 'Main Branch',
           profilePhoto: employee.profilePhoto,
           active: employee.active,
           geofenceEnabled: employee.geofenceEnabled,
@@ -158,6 +170,7 @@ export async function GET(request: NextRequest) {
         where: { id: employeeId },
         include: {
           organization: true,
+          branch: true,
           shifts: {
             include: { shift: true },
           },
@@ -180,11 +193,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const where = adminId ? { adminId } : (organizationId ? { organizationId } : {});
-    
+    const where: Record<string, unknown> = {};
+    if (adminId) where.adminId = adminId;
+    if (organizationId) where.organizationId = organizationId;
+    if (branchId) where.branchId = branchId;
+
     const employees = await db.employee.findMany({
       where,
       include: {
+        branch: {
+          select: { id: true, name: true, address: true },
+        },
         shifts: {
           include: { shift: true },
         },
@@ -192,7 +211,7 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return noStoreJson({ employees });
+    return noStoreJson({ success: true, employees });
   } catch (error) {
     console.error('Error fetching employees:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -203,16 +222,30 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { 
-      userId, password, securityPassword,
-      name, phone, email, address, designation, department, 
-      salary, overtimeRate, adminId, organizationId, profilePhoto,
+    const {
+      userId,
+      password,
+      securityPassword,
+      pin,
+      name,
+      phone,
+      email,
+      address,
+      designation,
+      department,
+      salary,
+      overtimeRate,
+      adminId,
+      organizationId,
+      branchId,
+      salaryTemplateId,
+      profilePhoto,
       shiftIds,
       aadharNumber, panNumber, accountNumber, ifscCode, upiId,
       geofenceEnabled, geofenceLat, geofenceLng, geofenceRadius,
     } = body;
 
-    // Validate required fields with detailed error messages
+    // Validate required fields
     if (!userId || userId.trim().length < 4) {
       return NextResponse.json({ error: 'User ID is required (minimum 4 characters)' }, { status: 400 });
     }
@@ -235,11 +268,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
     }
 
-    // Clean phone number (remove non-digits)
     const cleanPhone = phone.replace(/\D/g, '');
     const cleanUserId = userId.trim().toLowerCase();
 
-    // Check if userId already exists
     const existingByUserId = await db.employee.findUnique({
       where: { userId: cleanUserId },
     });
@@ -247,7 +278,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID already exists. Please choose a different one.' }, { status: 400 });
     }
 
-    // Check if phone already exists
     const existingByPhone = await db.employee.findUnique({
       where: { phone: cleanPhone },
     });
@@ -255,18 +285,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Phone number already registered with another employee.' }, { status: 400 });
     }
 
-    // Verify admin exists
-    const adminExists = await db.admin.findUnique({
-      where: { id: adminId },
-    });
+    const adminExists = await db.admin.findUnique({ where: { id: adminId } });
     if (!adminExists) {
       return NextResponse.json({ error: 'Admin not found. Please login again.' }, { status: 400 });
     }
 
-    // Verify organization exists
-    const orgExists = await db.organization.findUnique({
-      where: { id: organizationId },
-    });
+    const orgExists = await db.organization.findUnique({ where: { id: organizationId } });
     if (!orgExists) {
       return NextResponse.json({ error: 'Organization not found. Please contact support.' }, { status: 400 });
     }
@@ -281,16 +305,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: geofencePayload.error }, { status: 400 });
     }
 
-    // Hash password and security password
     const hashedPassword = await bcrypt.hash(password, 10);
     const hashedSecurityPassword = await bcrypt.hash(securityPassword, 10);
+    const rawPin = pin ? String(pin).trim() : cleanPhone.slice(-4);
+    const hashedPin = await bcrypt.hash(rawPin, 10);
 
-    // Create employee with shifts
     const employee = await db.employee.create({
       data: {
         userId: cleanUserId,
         password: hashedPassword,
         securityPassword: hashedSecurityPassword,
+        pin: hashedPin,
         name: name.trim(),
         phone: cleanPhone,
         email: email?.trim() || null,
@@ -306,25 +331,25 @@ export async function POST(request: NextRequest) {
         upiId: upiId?.trim() || null,
         adminId,
         organizationId,
+        branchId: branchId || null,
+        salaryTemplateId: salaryTemplateId || null,
         profilePhoto: profilePhoto || null,
         biometricEnabled: false,
         active: true,
         starOfMonth: false,
         ...geofencePayload,
         shifts: shiftIds && shiftIds.length > 0 ? {
-          create: shiftIds.map((shiftId: string) => ({
-            shiftId,
-          })),
+          create: shiftIds.map((shiftId: string) => ({ shiftId })),
         } : undefined,
       },
       include: {
+        branch: true,
         shifts: {
           include: { shift: true },
         },
       },
     });
 
-    console.log('Employee created successfully:', employee.id, employee.name);
     return noStoreJson({ success: true, employee });
   } catch (error) {
     console.error('Error creating employee:', error);
@@ -333,11 +358,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT /api/employees - Update employee
+// PUT /api/employees - Update employee & Reset PIN
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, password, shiftIds, ...data } = body;
+    const { id, password, pin, shiftIds, ...data } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
@@ -357,6 +382,8 @@ export async function PUT(request: NextRequest) {
       accountNumber: data.accountNumber,
       ifscCode: data.ifscCode,
       upiId: data.upiId,
+      branchId: data.branchId !== undefined ? data.branchId : undefined,
+      salaryTemplateId: data.salaryTemplateId !== undefined ? data.salaryTemplateId : undefined,
       biometricEnabled: data.biometricEnabled,
       active: data.active,
       starOfMonth: data.starOfMonth,
@@ -382,12 +409,14 @@ export async function PUT(request: NextRequest) {
       Object.assign(updateData, geofencePayload);
     }
 
-    // If password is provided, hash and update
     if (password) {
       updateData.password = await bcrypt.hash(password, 10);
     }
 
-    // If userId is being updated, check for duplicates
+    if (pin) {
+      updateData.pin = await bcrypt.hash(String(pin).trim(), 10);
+    }
+
     if (data.userId) {
       const existing = await db.employee.findUnique({
         where: { userId: data.userId },
@@ -402,20 +431,17 @@ export async function PUT(request: NextRequest) {
       where: { id },
       data: updateData,
       include: {
+        branch: true,
         shifts: {
           include: { shift: true },
         },
       },
     });
 
-    // Update shifts if provided
     if (shiftIds !== undefined) {
-      // Delete existing shifts
       await db.employeeShift.deleteMany({
         where: { employeeId: id },
       });
-      
-      // Create new shifts
       if (shiftIds && shiftIds.length > 0) {
         await db.employeeShift.createMany({
           data: shiftIds.map((shiftId: string) => ({
@@ -433,16 +459,29 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE /api/employees - Delete employee (DISABLED - Users cannot be deleted)
+// DELETE /api/employees - Delete / deactivate employee
 export async function DELETE(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get('id');
+  const hardDelete = request.nextUrl.searchParams.get('hard') === 'true';
+
+  if (!id) {
+    return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
+  }
+
   try {
-    // Deleting users is not allowed - return error
-    return NextResponse.json(
-      { error: 'User deletion is not allowed. You can only deactivate users.' },
-      { status: 403 }
-    );
+    if (hardDelete) {
+      await db.employee.delete({ where: { id } });
+      return noStoreJson({ success: true, message: 'Employee permanently deleted' });
+    }
+
+    // Default: Soft deactivate for data safety
+    const updated = await db.employee.update({
+      where: { id },
+      data: { active: false },
+    });
+    return noStoreJson({ success: true, message: 'Employee deactivated successfully', employee: updated });
   } catch (error) {
-    console.error('Error in delete route:', error);
+    console.error('Error in delete employee route:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -83,3 +83,11 @@ prisma/*.db
 prisma/*.db-journal
 *.zip
 scratch/
+
+# Android build outputs
+android/.gradle
+android/build
+android/app/build
+android/local.properties
+android/app/src/main/assets/public
+SalaryBox-v1.0.apk
