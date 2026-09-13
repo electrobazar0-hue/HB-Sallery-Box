@@ -13,6 +13,11 @@ import { PWAInstallPrompt } from '@/components/pwa-install-prompt';
 import { useAuthStore } from '@/store/auth-store';
 import { useBiometric } from '@/hooks/use-biometric';
 import { fetchJSON } from '@/lib/utils';
+import { installClientApiInterceptor } from '@/lib/client-api-interceptor';
+
+if (typeof window !== 'undefined') {
+  installClientApiInterceptor();
+}
 
 type Screen = 'splash' | 'setup' | 'login' | 'register' | 'dashboard' | 'settings';
 
