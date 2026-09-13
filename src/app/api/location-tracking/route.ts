@@ -15,9 +15,11 @@ export async function GET(request: NextRequest) {
   const employeeId = request.nextUrl.searchParams.get('employeeId');
 
   try {
-    const whereClause: Record<string, unknown> = {
-      status: 'active',
-    };
+    const includeAll = request.nextUrl.searchParams.get('status') === 'all';
+    const whereClause: Record<string, unknown> = {};
+    if (!includeAll) {
+      whereClause.status = 'active';
+    }
 
     if (organizationId) {
       whereClause.organizationId = organizationId;
@@ -56,18 +58,30 @@ export async function GET(request: NextRequest) {
           },
         },
         updates: {
-          orderBy: { timestamp: 'desc' },
-          take: 1, // Only get the latest update for live map
+          orderBy: { timestamp: 'asc' },
+          take: 150, // Get the breadcrumb path for route mapping
         },
       },
       orderBy: { startedAt: 'desc' },
+      take: 50,
     });
 
     const activeStaff = sessions.map((session) => {
-      const latestUpdate = session.updates[0] || null;
+      const updates = session.updates || [];
+      const latestUpdate = updates[updates.length - 1] || null;
+      
+      const routeHistory = updates.map((u) => ({
+        id: u.id,
+        latitude: u.latitude,
+        longitude: u.longitude,
+        accuracy: u.accuracy,
+        timestamp: u.timestamp,
+      }));
+
       return {
         sessionId: session.id,
         employeeId: session.employeeId,
+        status: session.status,
         name: session.employee?.name || 'Staff',
         phone: session.employee?.phone || '',
         designation: session.employee?.designation || '',
@@ -75,11 +89,15 @@ export async function GET(request: NextRequest) {
         profilePhoto: session.employee?.profilePhoto || null,
         branchName: session.employee?.branch?.name || 'Main Branch',
         punchInTime: session.attendance?.punchIn || null,
+        punchOutTime: session.attendance?.punchOut || null,
         startedAt: session.startedAt,
+        endedAt: session.endedAt,
         latitude: latestUpdate?.latitude ?? null,
         longitude: latestUpdate?.longitude ?? null,
         accuracy: latestUpdate?.accuracy ?? null,
         lastUpdated: latestUpdate?.timestamp ?? session.startedAt,
+        totalPoints: routeHistory.length,
+        routeHistory,
       };
     });
 

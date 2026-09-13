@@ -6,7 +6,7 @@ import {
   LogOut, Users, Clock, DollarSign, Calendar,
   Bell, ChevronRight, FileText, Settings,
   Home, Menu, X, Star, MessageSquare, Edit,
-  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle, MapPin, Navigation, ExternalLink, Building
+  Check, XCircle, Fingerprint, UserPlus, Send, Camera, Activity, KeyRound, PartyPopper, Shield, Trash2, Eye, Gift, Receipt, Wallet, CheckCircle, XIcon, ShieldCheck, ShieldX, AlertCircle, MapPin, Navigation, ExternalLink, Building, Download
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -253,6 +253,7 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
   const [selectedPayrollMonth, setSelectedPayrollMonth] = useState(new Date().toISOString().slice(0, 7));
   const [employeeDialogStep, setEmployeeDialogStep] = useState<'details' | 'geofence'>('details');
   const [isDetectingGeofence, setIsDetectingGeofence] = useState(false);
+  const [viewPhotoModal, setViewPhotoModal] = useState<{ url: string; title: string } | null>(null);
 
   // Form states
   const [employeeForm, setEmployeeForm] = useState(initialEmployeeForm);
@@ -1262,7 +1263,15 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
                 <h1 className="text-2xl font-bold">{t.dashboard.welcomeAdmin}, {user?.name?.split(' ')[0] || 'Admin'}!</h1>
                 <p className="text-muted-foreground">{user?.organizationName || t.dashboard.organizationDashboard}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => window.open('/HB-SALLERY-BOX.apk', '_blank')}
+                  className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-medium"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download APK
+                </Button>
                 <Button onClick={() => { resetEmployeeDialog(); setShowAddEmployee(true); }}
                   className="bg-gradient-to-r from-emerald-500 to-teal-600">
                   <UserPlus className="h-4 w-4 mr-2" />
@@ -1905,38 +1914,146 @@ export function AdminDashboard({ onLogout, onSettings }: AdminDashboardProps) {
         </DialogContent>
       </Dialog>
 
-      {/* Attendance Dialog */}
+      {/* Today's Attendance Dialog */}
       <Dialog open={showAttendance} onOpenChange={setShowAttendance}>
-        <DialogContent className="max-w-2xl max-h-[80dvh]">
-          <DialogHeader><DialogTitle>{t.dashboard.todayAttendance}</DialogTitle></DialogHeader>
-          <ScrollArea className="max-h-80">
-            <div className="space-y-2">
-              {attendance.map((record) => (
-                <div key={record.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                  <Avatar className="h-10 w-10">
-                    <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-600 text-white">
-                      {record.employee.name.charAt(0)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="font-medium">{record.employee.name}</p>
-                    <p className="text-sm text-muted-foreground">{record.employee.designation}</p>
-                  </div>
-                  <div className="text-right">
-                    <div className="flex flex-wrap items-center justify-end gap-1">
-                      <Badge variant={record.punchIn ? 'default' : 'destructive'}>
-                        {t.attendance.inLabel}: {record.punchIn || 'Not punched in'}
-                      </Badge>
-                      <Badge variant={record.punchOut ? 'secondary' : 'outline'}>
-                        {t.attendance.outLabel}: {record.punchOut || 'Pending'}
-                      </Badge>
-                    </div>
-                    {record.workHours > 0 && <p className="text-xs text-muted-foreground mt-1">{record.workHours}h worked</p>}
-                  </div>
+        <DialogContent className="max-w-2xl max-h-[85dvh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>{t.dashboard.todayAttendance}</span>
+              <Badge variant="outline" className="text-xs font-mono">
+                {attendance.filter(a => a.punchIn).length} Present Today
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[65dvh]">
+            <div className="space-y-3 pr-2">
+              {attendance.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                  <p>No attendance records for today</p>
                 </div>
-              ))}
+              ) : (
+                attendance.map((record) => (
+                  <div key={record.id} className="p-3.5 rounded-xl border bg-card/60 backdrop-blur-sm space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <Avatar className="h-10 w-10 border border-emerald-500/30">
+                          <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold">
+                            {record.employee.name.charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-semibold text-sm">{record.employee.name}</p>
+                          <p className="text-xs text-muted-foreground">{record.employee.designation || 'Staff'}</p>
+                        </div>
+                      </div>
+
+                      {record.workHours > 0 && (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-xs">
+                          ⏱ {record.workHours}h worked
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Punch In & Punch Out Details with Photo & Location */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                      {/* Punch In Column */}
+                      <div className="p-2.5 rounded-lg bg-muted/40 border text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            ● {t.attendance.inLabel}:
+                          </span>
+                          <span className="font-mono font-bold">{record.punchIn || 'Not punched in'}</span>
+                        </div>
+
+                        {record.punchIn && (
+                          <div className="flex items-center gap-2 pt-1">
+                            {record.punchInPhoto ? (
+                              <button
+                                type="button"
+                                onClick={() => setViewPhotoModal({
+                                  url: record.punchInPhoto!,
+                                  title: `${record.employee.name} — Punch In Photo (${record.punchIn})`
+                                })}
+                                className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 text-[11px] font-medium transition-colors"
+                              >
+                                <Camera className="h-3 w-3" /> Photo
+                              </button>
+                            ) : null}
+
+                            {record.punchInLat && record.punchInLng ? (
+                              <button
+                                type="button"
+                                onClick={() => window.open(`https://www.google.com/maps?q=${record.punchInLat},${record.punchInLng}`, '_blank')}
+                                className="flex items-center gap-1 px-2 py-1 rounded bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 text-[11px] font-medium transition-colors"
+                              >
+                                <MapPin className="h-3 w-3" /> Location Pin
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Punch Out Column */}
+                      <div className="p-2.5 rounded-lg bg-muted/40 border text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                            ● {t.attendance.outLabel}:
+                          </span>
+                          <span className="font-mono font-bold">{record.punchOut || 'Pending'}</span>
+                        </div>
+
+                        {record.punchOut && (
+                          <div className="flex items-center gap-2 pt-1">
+                            {record.punchOutPhoto ? (
+                              <button
+                                type="button"
+                                onClick={() => setViewPhotoModal({
+                                  url: record.punchOutPhoto!,
+                                  title: `${record.employee.name} — Punch Out Photo (${record.punchOut})`
+                                })}
+                                className="flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 text-[11px] font-medium transition-colors"
+                              >
+                                <Camera className="h-3 w-3" /> Photo
+                              </button>
+                            ) : null}
+
+                            {record.punchOutLat && record.punchOutLng ? (
+                              <button
+                                type="button"
+                                onClick={() => window.open(`https://www.google.com/maps?q=${record.punchOutLat},${record.punchOutLng}`, '_blank')}
+                                className="flex items-center gap-1 px-2 py-1 rounded bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 text-[11px] font-medium transition-colors"
+                              >
+                                <MapPin className="h-3 w-3" /> Location Pin
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Photo Preview Dialog */}
+      <Dialog open={!!viewPhotoModal} onOpenChange={(open) => { if (!open) setViewPhotoModal(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">{viewPhotoModal?.title || 'Attendance Photo'}</DialogTitle>
+          </DialogHeader>
+          <div className="p-2 flex flex-col items-center justify-center">
+            {viewPhotoModal?.url && (
+              <img
+                src={viewPhotoModal.url}
+                alt="Attendance Photo"
+                className="max-h-[60dvh] w-full rounded-xl object-contain bg-black/5 border shadow-inner"
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 

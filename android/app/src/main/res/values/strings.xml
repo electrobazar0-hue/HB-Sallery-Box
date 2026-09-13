@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Salary Box</string>
-    <string name="title_activity_main">Salary Box</string>
+    <string name="app_name">HB-SALLERY-BOX</string>
+    <string name="title_activity_main">HB-SALLERY-BOX</string>
     <string name="package_name">com.hbsalarybox.app</string>
     <string name="custom_url_scheme">com.hbsalarybox.app</string>
 </resources>

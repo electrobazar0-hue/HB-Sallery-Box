@@ -90,4 +90,6 @@ android/build
 android/app/build
 android/local.properties
 android/app/src/main/assets/public
+*.apk
 SalaryBox-v1.0.apk
+HB-SALLERY-BOX.apk
